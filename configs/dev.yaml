@@ -1,0 +1,29 @@
+meta:
+  config_id: 'development'
+
+training:
+  epochs: 3
+  visualize_every: 1
+  lr: 0.0003
+  lr: 0.0003
+  grad_clip_value: 1.0
+  lambda_size: 0.0001
+
+model:
+  topology_loss:
+    metric_type: "anisotropic"
+
+data:
+  batch_size: 4
+  dataset_type: 'mnist'
+  num_samples: 100
+
+  num_workers: 2
+  max_points: 500
+  num_outliers: 50
+  pin_memory: True
+
+device: 'auto'
+
+outputs:
+  base_dir: "outputs/comparison/anisotropic"

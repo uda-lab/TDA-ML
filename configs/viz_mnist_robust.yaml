@@ -1,0 +1,23 @@
+data:
+  dataset: "noisy_mnist"
+  max_points: 150 # Match Phase 1 for proven success/speed
+  num_outliers: 20
+  seed: 42 
+  test_size: 5 
+  num_workers: 0
+  batch_size: 1
+
+dbscan:
+  metric: 'max'
+  search_strategy: 'hard_constrained'
+  target_specificity: 0.99
+  # eps, min_samples are ignored in search
+  min_b: 0.2
+  
+outputs:
+  base_dir: "outputs"
+  
+device: "cpu"
+
+meta:
+  config_id: "viz_mnist_robust"

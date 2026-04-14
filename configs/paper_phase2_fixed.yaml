@@ -1,0 +1,54 @@
+model:
+  name: "AnisotropicOutlierClassifier"
+  point_dim: 2
+  feature_dim: 128
+  ellipse_param_dim: 5
+  threshold: 0.5
+  topology_loss:
+    metric_type: "anisotropic"
+    
+data:
+  dataset: "synthetic_anisotropic"
+  num_points: 200      # Match current repro setting
+  num_outliers: 200    # Match current repro setting
+  train_size: 1000     # Enough to train
+  test_size: 100
+  seed: 42 
+  num_workers: 4
+  batch_size: 64
+
+training:
+  epochs: 30
+  batch_size: 64
+  lr: 4.66e-4 
+  
+  lambda_class: 1.0
+  lambda_topo: 0.1
+  # lambda_aniso: 0.0101788  <-- REMOVED (Too high for barrier mode? Or just mode was wrong?)
+  # Using lower weight for barrier to allow growth
+  lambda_aniso: 0.001 
+  lambda_size: 0.00765
+  lambda_min_b: 0.143003
+  min_b_target: 0.2
+  
+  visualize_every: 10
+
+loss:
+  aniso_mode: 'barrier'  # CHANGED to barrier
+  w_aniso: 0.001
+
+dbscan:
+  metric: 'max'
+  search_strategy: 'fixed'
+  eps: 0.15 
+  min_samples: 10
+  target_specificity: 0.99
+  min_b: 0.2
+  
+outputs:
+  base_dir: "outputs"
+  log_dir: "outputs/phase2_fixed/logs"
+  image_dir: "outputs/phase2_fixed/images"
+
+meta:
+  config_id: "phase2_fixed"

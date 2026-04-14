@@ -1,0 +1,40 @@
+meta:
+  config_id: 'statistical_validation'
+  description: 'Multi-seed training for statistical validation using best hyperparameters from Optuna Trial 1'
+
+# Seeds for independent experiments
+seeds: [42, 123, 456, 789, 1024, 2048, 3072, 4096, 5120, 6144]
+
+# Training hyperparameters (from Optuna Trial 1 - best MCC)
+training:
+  epochs: 50
+  visualize_every: 10  # Reduce visualization frequency to save time
+  lr: 0.009446258026921825
+  grad_clip_value: 1.0
+  lambda_size: 0.00025791201464258235
+  lambda_aniso: 0.039296501230756724
+  lambda_min_b: 0.18720396000639533
+
+model:
+  topology_loss:
+    metric_type: "anisotropic"
+
+# Data configuration (same as prod)
+data:
+  batch_size: 32
+  dataset_type: 'mnist'
+  train_size: 4500
+  val_size: 500
+  test_size: 1000
+  # seed will be overridden by multi_seed_training.py
+  seed: 42  # default, will be replaced
+  num_workers: 64
+  max_points: 150
+  num_outliers: 30
+  pin_memory: True
+
+device: 'auto'
+
+# Output configuration
+outputs:
+  base_dir: "outputs/statistical_validation"

@@ -1,0 +1,23 @@
+meta:
+  config_id: 'dbscan_best_20251206'
+
+training:
+  # Inherit or keep minimal relevant training params if needed for loading
+  epochs: 50
+  
+dbscan:
+  eps: 0.1
+  min_samples: 10
+  metric: 'max'
+  min_b: 0.5 # Inference clipping threshold
+
+data:
+  batch_size: 32
+  dataset_type: 'mnist'
+  max_points: 500
+  num_outliers: 50
+  test_size: 1000
+  seed: 42
+
+outputs:
+  base_dir: "outputs/dbscan/optimized"

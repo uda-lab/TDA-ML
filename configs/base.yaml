@@ -1,0 +1,40 @@
+# Base configuration
+# Shared parameters for all environments
+
+training:
+  lr: 0.0003
+  grad_clip_value: 1.0
+  visualize_every: 10 # Epoch interval for visualization
+  # Classification loss weight
+  lambda_class: 1.0
+  # Anisotropic regularization weight
+  lambda_aniso: 0.01
+  # Ellipse size regularization weight
+  lambda_size: 1.0
+  # Topological loss weight
+  lambda_topo: 0.1
+  # Penalty scale for outliers in topological distance
+  outlier_penalty_scale: 2.0
+
+model:
+  topology_loss:
+    metric_type: "anisotropic" # "anisotropic" or "euclidean"
+  threshold: 0.1
+
+data:
+  max_points: 100
+  batch_size: 32
+  num_outliers: 20
+  num_workers: 2
+  pin_memory: true
+  seed: 42
+  train_size: 4500
+  val_size: 500
+  test_size: 1000
+  dataset_type: "mnist"
+
+device: "auto" # "auto", "cpu", or "cuda"
+
+outputs:
+  log_dir: "outputs/logs"
+  image_dir: "outputs/images"

@@ -1,0 +1,54 @@
+model:
+  name: "AnisotropicOutlierClassifier"
+  point_dim: 2
+  feature_dim: 128
+  ellipse_param_dim: 5
+  threshold: 0.5
+  topology_loss:
+    metric_type: "anisotropic"
+    
+data:
+  dataset: "mnist"
+  dataset_type: 'mnist'
+  num_points: 150
+  num_outliers: 20
+  train_size: 50
+  val_size: 10
+  test_size: 10
+  seed: 42
+  num_workers: 0
+  batch_size: 32
+
+training:
+  epochs: 15  # Quick test
+  batch_size: 32
+  lr: 4.9e-4
+  
+  lambda_class: 1.0
+  lambda_topo: 0.1
+  lambda_aniso: 0.001  # Reduced weight and barrier mode
+  lambda_size: 0.0056
+  lambda_min_b: 0.41
+  min_b_target: 0.1
+  
+  visualize_every: 5
+  grad_clip_value: 1.0
+
+loss:
+  aniso_mode: 'barrier'  # CHANGED to barrier
+  w_aniso: 0.001        # Explicit low weight
+
+dbscan:
+  metric: 'max'
+  search_strategy: 'fixed'
+  eps: 0.25
+  min_samples: 5
+  target_specificity: 0.99
+  
+outputs:
+  base_dir: "outputs"
+  log_dir: "outputs/test_aniso/logs"
+  image_dir: "outputs/test_aniso/images"
+
+meta:
+  config_id: "test_anisotropy"

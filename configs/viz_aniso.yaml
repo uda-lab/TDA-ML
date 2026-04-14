@@ -1,0 +1,20 @@
+meta:
+  config_id: 'viz_generation'
+
+data:
+  dataset: 'synthetic_anisotropic'
+  test_size: 10
+  num_points: 1000
+  num_outliers: 100
+  num_clusters: 5
+  randomize_clusters: True
+  seed: 42
+
+device: 'auto'
+
+outputs:
+  base_dir: "outputs/viz"
+
+dbscan:
+  eps: 0.05      # Very small eps to demonstrate Euclidean failure
+  min_samples: 10

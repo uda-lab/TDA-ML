@@ -1,0 +1,54 @@
+meta:
+  config_id: 'pca_v43_hybrid_skeletal'
+  experiment_name: 'PCA_Production_v43'
+
+training:
+  epochs: 50
+  visualize_every: 1
+  lr: 0.001
+  weight_decay: 1e-4
+  lambda_class: 1.0
+  lambda_topo: 4.0
+  lambda_aniso: 0.0
+  lambda_major: 0.01
+  lambda_minor: 2.0
+  lambda_min_b: 1.0
+  min_b_target: 0.05
+  lambda_diversity: 0.0
+  topo_eps_scale: 0.05
+  aniso_mode: 'barrier'
+  barrier_threshold: 5.0
+  rotation_augmentation: False 
+  grad_clip_value: 1.0
+  topo_samples: 20
+  warmup_epochs: 5
+  local_pd_k: 8
+  local_pd_samples: 30
+
+loss:
+  pos_weight: 0.2
+
+model:
+  type: 'anisotropic'
+  input_dim: 2
+  ellipse_param_dim: 5
+  hidden_dim: 64
+
+data:
+  batch_size: 4
+  dataset_type: 'mnist'
+  train_size: 4500
+  val_size: 500
+  test_size: 1000
+  seed: 42
+  num_workers: 0
+  max_points: 50
+  num_outliers: 50
+
+device: 'cpu'
+
+outputs:
+  base_dir: "experiments/pca_branch"
+  log_dir: "experiments/pca_branch/logs"
+  image_dir: "experiments/pca_branch/images"
+  save_every: 10

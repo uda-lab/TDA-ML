@@ -1,0 +1,53 @@
+model:
+  name: "AnisotropicOutlierClassifier"
+  point_dim: 2
+  feature_dim: 128
+  ellipse_param_dim: 5
+  threshold: 0.5
+  topology_loss:
+    metric_type: "anisotropic"
+    
+loss:
+  w_class: 1.0
+  w_topo: 0.1
+  w_aniso: 0.01099204345474479 # [Trial 2]
+  w_size: 0.0055785823086202556 # [Trial 2]
+  w_min_b: 0.40881559803817036 # [Trial 2]
+  pos_weight: 1.0
+  aniso_mode: 'linear'
+
+training:
+  lr: 0.0004897466143769238 # [Trial 2]
+  batch_size: 64
+  epochs: 20 # Optimized for speed (Stability check doesn't need 50)
+  grad_clip_value: 1.0
+  min_b_target: 0.2
+  lambda_class: 1.0
+  lambda_topo: 0.1
+  lambda_aniso: 0.01099204345474479
+  lambda_size: 0.0055785823086202556
+  lambda_min_b: 0.40881559803817036
+  visualize_every: 10 # Reduce I/O for speed
+
+data:
+  max_points: 200
+  num_outliers: 20
+  seed: 42 # Will be overridden in script
+  test_size: 1000
+  num_workers: 4
+  batch_size: 64
+
+outputs:
+  base_dir: "outputs"
+  log_dir: "outputs/paper_phase1/logs"
+  image_dir: "outputs/paper_phase1/images"
+
+
+dbscan:
+  eps: 0.2
+  min_samples: 3
+  metric: 'max'
+  min_b: 0.2 # Unify with Sine setting
+
+meta:
+  config_id: "paper_phase1"

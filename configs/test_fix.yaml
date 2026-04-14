@@ -1,0 +1,14 @@
+# Test configuration for verifying fixes
+meta:
+  config_id: "test_fix"
+
+training:
+  epochs: 5
+  visualize_every: 5
+  lambda_size: 0.1 # Stronger penalty for verification
+
+model:
+  threshold: 0.3 # Lower threshold for higher recall
+
+outputs:
+  base_dir: "outputs/verification"

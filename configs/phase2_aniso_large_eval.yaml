@@ -1,0 +1,37 @@
+meta:
+  config_id: "phase2_aniso_large_eval"
+  description: "Phase 2: Large Scale Evaluation on Synthetic Anisotropic Dataset (Generalized)"
+
+device: "auto"
+
+data:
+  dataset: "synthetic_anisotropic"
+  num_scenes: 100 
+  num_points: 1000   # Large scale
+  num_outliers: 100  # 10% outlier ratio
+  num_clusters: 5    # More complex
+  randomize_clusters: true # Test generalization
+  batch_size: 16 
+  num_workers: 4
+  seed: 9999 
+
+model:
+  name: "mlp"
+  point_dim: 2
+  feature_dim: 128
+  ellipse_param_dim: 5
+  resume_path: "outputs/phase2/phase2_aniso_v1_20251214_235838/best_model.pth" # Epoch 3 Best Model
+
+training:
+  epochs: 0 
+  visualize_every: 1
+
+loss: 
+  w_class: 1.0
+  pos_weight: 10.0
+  w_topo: 0.5
+  w_aniso: 1.0
+  w_size: 0.1
+
+outputs:
+  base_dir: "outputs/phase2_large_eval"

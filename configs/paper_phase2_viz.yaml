@@ -1,0 +1,52 @@
+model:
+  name: "AnisotropicOutlierClassifier"
+  point_dim: 2
+  feature_dim: 128
+  ellipse_param_dim: 5
+  threshold: 0.5
+  topology_loss:
+    metric_type: "anisotropic"
+    
+data:
+  dataset: "synthetic_anisotropic"
+  num_points: 200       # Reduced from 900 for visualization clarity and speed
+  num_outliers: 20      # Proportional reduction (10%)
+  train_size: 500       # Number of scenes (epochs will iterate these)
+  val_size: 100
+  test_size: 100
+  seed: 42 
+  num_workers: 0        # Single thread for speed on small data
+  batch_size: 32
+
+training:
+  epochs: 30
+  batch_size: 32
+  lr: 1.0e-3           # Slightly higher LR for faster convergence
+  
+  lambda_class: 1.0
+  lambda_topo: 0.1
+  lambda_aniso: 0.0  # Remove penalty to allow ellipses
+  lambda_size: 0.01
+  lambda_min_b: 0.1
+  min_b_target: 0.1
+  
+  visualize_every: 10
+
+loss:
+  aniso_mode: 'linear'
+
+dbscan:
+  metric: 'max'
+  search_strategy: 'fixed'
+  eps: 0.15 
+  min_samples: 5
+  target_specificity: 0.99
+  min_b: 0.1
+  
+outputs:
+  base_dir: "outputs"
+  log_dir: "outputs/viz_phase2/logs"
+  image_dir: "outputs/viz_phase2/images"
+
+meta:
+  config_id: "viz_phase2"

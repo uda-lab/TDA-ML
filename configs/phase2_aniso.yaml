@@ -1,0 +1,42 @@
+
+meta:
+  config_id: "phase2_aniso_v1"
+  description: "Phase 2: Evaluation on Synthetic Anisotropic Dataset"
+
+device: "auto"
+
+data:
+  dataset: "synthetic_anisotropic"
+  num_scenes: 2000
+  num_points: 200   # Inliers
+  num_outliers: 20  # Outliers (10% ratio)
+  batch_size: 32
+  num_workers: 4
+  num_clusters: 3
+  randomize_clusters: true
+  seed: 42
+  train_size: 1500
+  val_size: 200
+  test_size: 300
+
+model:
+  name: "mlp"
+  point_dim: 2
+  feature_dim: 128
+  ellipse_param_dim: 5
+
+training:
+  epochs: 30
+  lr: 0.0001
+  weight_decay: 1e-5
+  visualize_every: 5
+  
+loss:
+  w_class: 1.0
+  pos_weight: 2.5  # Manually tuned stable point
+  w_topo: 0.5
+  w_aniso: 0.01  # Reduced from 1.0 to allow anisotropy (reproduce 12/09)
+  w_size: 0.1   # Regularization to keep ellipses tight
+
+outputs:
+  base_dir: "outputs/phase2"

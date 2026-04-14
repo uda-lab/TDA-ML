@@ -4,7 +4,12 @@ import torch.nn.functional as F
 from torch.optim import Adam
 from torch_topological.nn import VietorisRipsComplex, WassersteinDistance
 from src.utils import sample_from_ellipses, visualize, calculate_persistent_entropy
-from src.losses import TopologicalLoss
+from src.losses import (
+    ClassificationLoss, 
+    TopologicalLoss, 
+    SizeRegularizationLoss, 
+    AnisotropyPenaltyLoss
+)
 import os
 import tqdm
 from sklearn.metrics import f1_score, precision_score, recall_score, confusion_matrix, matthews_corrcoef
@@ -44,23 +49,27 @@ class Trainer:
         print(f"Anisotropy Penalty Mode: {self.aniso_mode}")
         
         pos_weight_val = config.get('loss', {}).get('pos_weight', 1.0)
-        if abs(pos_weight_val - 1.0) > 1e-6:
-            print(f"Using pos_weight: {pos_weight_val}")
-            self.pos_weight = torch.tensor([pos_weight_val], device=self.device)
-            self.class_loss_fn = nn.BCEWithLogitsLoss(pos_weight=self.pos_weight)
-        else:
-            self.class_loss_fn = nn.BCEWithLogitsLoss()
+        pos_weight = torch.tensor([pos_weight_val], device=self.device) if pos_weight_val != 1.0 else None
+        
+        # Initialize Losses
+        self.class_loss_fn = ClassificationLoss(pos_weight=pos_weight)
+        self.topo_loss_fn = TopologicalLoss(weight=self.lambda_topo)
+        self.size_loss_fn = SizeRegularizationLoss(w_major=self.lambda_major, w_minor=self.lambda_minor)
+        self.aniso_loss_fn = AnisotropyPenaltyLoss(
+            weight=self.lambda_aniso, 
+            mode=self.aniso_mode, 
+            barrier_threshold=config['training'].get('barrier_threshold', 6.0)
+        )
         
         self.wasserstein = WassersteinDistance(q=2)
 
-        self.visualize_every = config['training']['visualize_every']
+        self.visualize_every = config['training'].get('visualize_every', 5)
         self.output_dir = config['outputs']['image_dir']
         self.log_dir = config['outputs']['log_dir']
 
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.log_dir, exist_ok=True)
 
-        self.topo_loss_fn = TopologicalLoss(weight=self.lambda_topo)
         self.fixed_indices = None
         self.threshold = config['model'].get('threshold', 0.5)
 
@@ -69,34 +78,7 @@ class Trainer:
         self.topo_samples = training_cfg.get('topo_samples', 20)
         self.warmup_epochs = training_cfg.get('warmup_epochs', 0)
 
-    def _compute_regularization_loss(self, params):
-        """
-        Compute regularization losses (Anisotropy, Size, MinB).
-        params: (B, N, 5) [x, y, a, b, theta]
-        """
-        axes = params[:, :, 2:4]
-        major_axis = axes.max(dim=-1)[0]
-        minor_axis = axes.min(dim=-1)[0]
-        
-        aniso_loss = torch.tensor(0.0, device=self.device)
-        if abs(self.lambda_aniso) > 1e-9:
-            aspect_ratios = major_axis / (minor_axis + 1e-6)
-            
-            if self.aniso_mode == 'barrier':
-                barrier_threshold = self.config['training'].get('barrier_threshold', 6.0)
-                barrier_term = F.relu(aspect_ratios - barrier_threshold).pow(2).mean()
-                aniso_loss = 10.0 * barrier_term
-            else:
-                aniso_loss = aspect_ratios.mean()
-
-        min_b_loss = torch.tensor(0.0, device=self.device)
-        if self.lambda_min_b > 0:
-             min_b_loss = F.relu(self.min_b_target - minor_axis).mean()
-
-        size_loss = (self.lambda_major * (major_axis**2) +
-                     self.lambda_minor * (minor_axis**2)).mean()
-             
-        return aniso_loss, size_loss, min_b_loss
+    # _compute_regularization_loss is now handled by classes in losses.py
 
     def train_epoch(self, data_loader, epoch):
         self.model.train()
@@ -139,38 +121,27 @@ class Trainer:
 
             logits, params = self.model(data)
 
-            class_loss = self.class_loss_fn(logits.squeeze(-1), labels.float())
+            class_loss = self.class_loss_fn(logits, labels)
 
             topo_loss = torch.tensor(0.0, device=self.device)
             if self.lambda_topo > 0 and epoch > self.warmup_epochs:
-                # Compute persistence diagrams for clean point clouds (Target)
-                # Optimization: This could be precomputed in the dataset for even more speed.
                 clean_pd_info = []
                 for j in range(data.shape[0]):
                     c = clean_pc[j]
                     valid_mask = torch.abs(c).sum(dim=1) > 1e-6
                     clean_pd_info.append(self.vr_complex(c[valid_mask]))
                 
-                # Compute topological loss using the optimized class
                 topo_loss = self.topo_loss_fn(data, params, logits, clean_pd_info)
 
-            if self.lambda_topo > 0 and epoch <= self.warmup_epochs:
-                 topo_loss = torch.tensor(0.0, device=self.device)
-
+            # Regularization Losses (Size and Anisotropy only, as per slides)
             if epoch > self.warmup_epochs:
-                aniso_loss, size_loss, min_b_loss = self._compute_regularization_loss(params)
+                size_loss = self.size_loss_fn(params)
+                aniso_loss = self.aniso_loss_fn(params)
             else:
-                aniso_loss = torch.tensor(0.0, device=self.device)
                 size_loss = torch.tensor(0.0, device=self.device)
-                min_b_loss = torch.tensor(0.0, device=self.device)
+                aniso_loss = torch.tensor(0.0, device=self.device)
 
-            diversity_loss = torch.tensor(0.0, device=self.device)
-            if self.lambda_diversity > 0 and epoch > self.warmup_epochs:
-                angles = params[:, :, 4]
-                angle_var = torch.var(angles, dim=1).mean()
-                diversity_loss = -angle_var
-
-            loss = class_loss + self.lambda_topo * topo_loss + self.lambda_aniso * aniso_loss + size_loss + self.lambda_min_b * min_b_loss + self.lambda_diversity * diversity_loss
+            loss = class_loss + topo_loss + aniso_loss + size_loss
 
             if torch.isnan(loss):
                 print("Warning: NaN loss")
@@ -185,16 +156,15 @@ class Trainer:
             total_topo_loss += topo_loss.item()
             total_aniso_loss += aniso_loss.item()
             total_size_loss += size_loss.item()
-            total_diversity_loss += diversity_loss.item()
             
             probs = torch.sigmoid(logits).squeeze(-1)
             preds = (probs > self.threshold).long()
             all_train_preds.extend(preds.cpu().numpy().flatten())
             all_train_labels.extend(labels.cpu().numpy().flatten())
 
-            pbar.set_postfix(loss=f"{loss.item():.4f}", cls=f"{class_loss.item():.4f}", topo=f"{topo_loss.item():.4f}", aniso=f"{aniso_loss.item():.4f}", size=f"{size_loss.item():.4f}", min_b=f"{min_b_loss.item():.4f}")
+            pbar.set_postfix(loss=f"{loss.item():.4f}", cls=f"{class_loss.item():.4f}", topo=f"{topo_loss.item():.4f}", aniso=f"{aniso_loss.item():.4f}", size=f"{size_loss.item():.4f}")
             if i % 10 == 0:
-                print(f"Step {i}: Loss={loss.item():.4f}, Class={class_loss.item():.4f}, Topo={topo_loss.item():.4f}, Aniso={aniso_loss.item():.4f}, Size={size_loss.item():.4f}, MinB={min_b_loss.item():.4f}")
+                print(f"Step {i}: Loss={loss.item():.4f}, Class={class_loss.item():.4f}, Topo={topo_loss.item():.4f}, Aniso={aniso_loss.item():.4f}, Size={size_loss.item():.4f}")
 
         avg_loss = total_loss / num_batches
         avg_class_loss = total_class_loss / num_batches
@@ -234,18 +204,12 @@ class Trainer:
                 labels = labels.to(self.device)
 
                 logits, params = self.model(data)
-                class_loss = self.class_loss_fn(logits.squeeze(-1), labels.float())
+                class_loss = self.class_loss_fn(logits, labels)
                 total_loss += class_loss.item()
                 
-                axes = params[:, :, 2:4]
-                major_axis = axes.max(dim=-1)[0]
-                minor_axis = axes.min(dim=-1)[0]
-                aniso_loss = (1 - minor_axis / major_axis).mean()
+                aniso_loss = self.aniso_loss_fn(params)
+                size_loss = self.size_loss_fn(params)
                 
-                size_loss = (major_axis * minor_axis).mean()
-                
-                min_b_loss = F.relu(self.min_b_target - minor_axis).mean()
-
                 probs = torch.sigmoid(logits).squeeze(-1)
                 preds = (probs > self.threshold).long()
 
@@ -254,22 +218,18 @@ class Trainer:
                 
                 if not hasattr(self, 'val_aniso_accum'): self.val_aniso_accum = 0
                 if not hasattr(self, 'val_size_accum'): self.val_size_accum = 0
-                if not hasattr(self, 'val_min_b_accum'): self.val_min_b_accum = 0
                 
                 self.val_aniso_accum += aniso_loss.item()
                 self.val_size_accum += size_loss.item()
-                self.val_min_b_accum += min_b_loss.item()
 
         num_batches = len(data_loader) if len(data_loader) > 0 else 1
         avg_loss = total_loss / num_batches
         
         avg_aniso = getattr(self, 'val_aniso_accum', 0) / num_batches
         avg_size = getattr(self, 'val_size_accum', 0) / num_batches
-        avg_min_b = getattr(self, 'val_min_b_accum', 0) / num_batches
         
         self.val_aniso_accum = 0
         self.val_size_accum = 0
-        self.val_min_b_accum = 0
 
         recall = recall_score(all_labels, all_preds, zero_division=0)
         
@@ -280,5 +240,5 @@ class Trainer:
         
         mcc = matthews_corrcoef(all_labels, all_preds)
         
-        return avg_loss, recall, specificity, gmean, mcc, avg_aniso, avg_size, avg_min_b
+        return avg_loss, recall, specificity, gmean, mcc, avg_aniso, avg_size
 

@@ -1,0 +1,33 @@
+data:
+  batch_size: 16
+  dataset: noisy_mnist
+  max_points: 30
+  noise_std: 0.01
+  num_outliers: 100
+  num_workers: 4
+  root: ./data
+  seed: 42
+meta:
+  config_id: sparsity_30_100
+  experiment_name: sparsity_30_100
+model:
+  ellipse_param_dim: 5
+  feature_dim: 128
+  hidden_dim: 64
+  point_dim: 2
+  type: anisotropic
+outputs:
+  base_dir: outputs/sparsity_test_30_100
+  image_dir: outputs/sparsity_test_30_100/images
+  log_dir: outputs/sparsity_test_30_100/logs
+  save_every: 5
+training:
+  aniso_mode: barrier
+  barrier_threshold: 10.0
+  epochs: 15
+  lambda_aniso: 0.001
+  lambda_class: 1.0
+  lambda_size: 0.01
+  lambda_topo: 0.1
+  lr: 0.001
+  weight_decay: 0.0001

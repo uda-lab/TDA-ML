@@ -1,0 +1,52 @@
+model:
+  name: "AnisotropicOutlierClassifier"
+  point_dim: 2
+  feature_dim: 128
+  ellipse_param_dim: 5
+  threshold: 0.5
+  topology_loss:
+    metric_type: "anisotropic"
+    
+data:
+  dataset: "mnist"
+  dataset_type: 'mnist'
+  num_points: 150       # N_in
+  num_outliers: 20      # N_noise
+  train_size: 500       # Scenes
+  val_size: 100
+  test_size: 100
+  seed: 123  # Match paper figure seed 
+  num_workers: 0       # CPU speed
+  batch_size: 32
+
+training:
+  epochs: 30
+  batch_size: 32
+  lr: 4.9e-4           # From paper
+  
+  lambda_class: 1.0
+  lambda_topo: 0.1     # From paper
+  lambda_aniso: 0.011  # From paper
+  lambda_size: 0.0056  # From paper
+  lambda_min_b: 0.41   # From paper
+  min_b_target: 0.1    # Default/Implied
+  
+  visualize_every: 10
+
+loss:
+  aniso_mode: 'linear'
+
+dbscan:
+  metric: 'max'
+  search_strategy: 'fixed'
+  eps: 0.15 
+  min_samples: 5
+  target_specificity: 0.99
+  
+outputs:
+  base_dir: "outputs"
+  log_dir: "outputs/phase1_repro/logs"
+  image_dir: "outputs/phase1_repro/images"
+
+meta:
+  config_id: "phase1_repro"

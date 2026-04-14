@@ -1,0 +1,39 @@
+meta:
+  config_id: 'test_multi_seed'
+  description: 'Test run with 1 seed and reduced epochs'
+
+# Test with just 1 seed
+seeds: [42]
+
+# Training hyperparameters (same as multi_seed_config but shorter)
+training:
+  epochs: 5  # Reduced for testing
+  visualize_every: 1
+  lr: 0.009446258026921825
+  grad_clip_value: 1.0
+  lambda_size: 0.00025791201464258235
+  lambda_aniso: 0.039296501230756724
+  lambda_min_b: 0.18720396000639533
+
+model:
+  topology_loss:
+    metric_type: "anisotropic"
+
+# Data configuration
+data:
+  batch_size: 32
+  dataset_type: 'mnist'
+  train_size: 4500
+  val_size: 500
+  test_size: 1000
+  seed: 42  # Will be overridden
+  num_workers: 64
+  max_points: 150
+  num_outliers: 30
+  pin_memory: True
+
+device: 'auto'
+
+# Output to test directory
+outputs:
+  base_dir: "outputs/test_statistical_validation"

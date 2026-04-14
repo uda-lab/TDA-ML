@@ -1,0 +1,4 @@
+training:
+  lambda_aniso: 0.005884927066517656
+  lambda_size: 0.014811940796019692
+  lambda_topo: 0.010647856411407636

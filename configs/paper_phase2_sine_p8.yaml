@@ -1,0 +1,51 @@
+model:
+  name: "AnisotropicOutlierClassifier"
+  point_dim: 2
+  feature_dim: 128
+  ellipse_param_dim: 5
+  threshold: 0.5
+  topology_loss:
+    metric_type: "anisotropic"
+    
+data:
+  dataset: "sine_curve"
+  num_points: 200       # Visualization scale
+  num_outliers: 30
+  train_size: 500
+  val_size: 100
+  test_size: 100
+  seed: 42 
+  num_workers: 0       
+  batch_size: 32
+
+training:
+  epochs: 30
+  batch_size: 32
+  lr: 4.9e-4           # Phase 1 LR
+  
+  lambda_class: 1.0
+  lambda_topo: 0.1     # Phase 1
+  lambda_aniso: 0.011  # Phase 1 (P8) Setting
+  lambda_size: 0.0056  # Phase 1 (P8) Setting
+  lambda_min_b: 0.41   # Phase 1 (P8) Setting
+  min_b_target: 0.1
+  
+  visualize_every: 5
+
+loss:
+  aniso_mode: 'linear'
+
+dbscan:
+  metric: 'max'
+  search_strategy: 'fixed'
+  eps: 0.15 
+  min_samples: 5
+  target_specificity: 0.99
+  
+outputs:
+  base_dir: "outputs"
+  log_dir: "outputs/viz_phase2_sine_p8_retry/logs"
+  image_dir: "outputs/viz_phase2_sine_p8_retry/images"
+
+meta:
+  config_id: "viz_phase2_sine_p8_retry"

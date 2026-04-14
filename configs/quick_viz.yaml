@@ -1,0 +1,23 @@
+data:
+  dataset: "noisy_mnist"
+  max_points: 200
+  num_outliers: 20
+  seed: 42 
+  test_size: 5 # Only 5 scenes needed for viz
+  num_workers: 0
+  batch_size: 1
+
+dbscan:
+  metric: 'max'
+  search_strategy: 'fixed'
+  eps: 0.15
+  min_samples: 10
+  min_b: 0.2
+  
+outputs:
+  base_dir: "outputs"
+  
+device: "cpu"
+
+meta:
+  config_id: "quick_viz"

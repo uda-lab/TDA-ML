@@ -1,0 +1,49 @@
+meta:
+  config_id: "paper_phase2_sine"
+  description: "Phase 2 Sine Curve extension: Evaluating robustness on curved manifolds."
+
+device: "auto"
+
+outputs:
+  base_dir: "outputs"
+
+data:
+  dataset: "sine_curve"
+  batch_size: 64
+  num_workers: 4
+  
+  # Synthetic Settings
+  train_size: 1000 # Scenes for training
+  val_size: 100
+  test_size: 200  # Scenes for testing
+  
+  num_points: 300
+  num_outliers: 50
+  
+  seed: 42
+
+training:
+  epochs: 30 # Less epochs might be enough for synthetic? Or sticking to 50.
+  batch_size: 64
+  lr: 4.66e-4 
+  
+  lambda_class: 1.0
+  lambda_topo: 0.1
+  lambda_aniso: 0.0101788
+  lambda_size: 0.00765
+  lambda_min_b: 0.143003
+  min_b_target: 0.2
+  
+  visualize_every: 5
+
+loss:
+  aniso_mode: 'linear'
+
+dbscan:
+  eps: 0.1
+  min_samples: 5
+  metric: 'max'
+  search_strategy: 'hard_constrained'
+  target_specificity: 0.99
+  use_tta: True
+  min_b: 0.2 # Match min_b_target from training for appropriate visualization scale

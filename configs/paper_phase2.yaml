@@ -1,0 +1,50 @@
+model:
+  name: "AnisotropicOutlierClassifier"
+  point_dim: 2
+  feature_dim: 128
+  ellipse_param_dim: 5
+  threshold: 0.5
+  topology_loss:
+    metric_type: "anisotropic"
+    
+data:
+  dataset: "synthetic_anisotropic"
+  num_points: 900       # Match Paper N=1000 (900 inliers + 100 noise)
+  num_outliers: 100     # Match Paper
+  test_size: 100        # Number of scenes to evaluate
+  seed: 42 
+  num_workers: 4
+  batch_size: 64
+
+training:
+  epochs: 50
+  batch_size: 64
+  lr: 4.66e-4 
+  
+  lambda_class: 1.0
+  lambda_topo: 0.1
+  lambda_aniso: 0.0101788
+  lambda_size: 0.00765
+  lambda_min_b: 0.143003
+  min_b_target: 0.2
+  
+  visualize_every: 10
+
+loss:
+  aniso_mode: 'linear'
+
+dbscan:
+  metric: 'max'
+  search_strategy: 'fixed' # hard_constrained is too slow on CPU
+  eps: 0.15 # Slightly larger for N=1000? Or 0.1? Let's try 0.15 as a safe middle ground since 0.1 was "victory" but maybe strict?
+  min_samples: 10
+  target_specificity: 0.99
+  min_b: 0.2
+  
+outputs:
+  base_dir: "outputs"
+  log_dir: "outputs/paper_phase2/logs"
+  image_dir: "outputs/paper_phase2/images"
+
+meta:
+  config_id: "paper_phase2"

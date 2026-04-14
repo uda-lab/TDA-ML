@@ -1,0 +1,39 @@
+
+# Sparse Phase 1 Config for Anisotropy Hypothesis Testing
+data:
+  dataset: 'noisy_mnist'
+  root: './data'
+  max_points: 60        # Sparse signal (Standard is 150)
+  num_outliers: 100     # High noise (Standard is 20)
+  noise_std: 0.01
+  batch_size: 16
+  num_workers: 4
+  seed: 42
+
+model:
+  type: 'anisotropic'
+  point_dim: 2
+  feature_dim: 128
+  ellipse_param_dim: 5
+  hidden_dim: 64
+
+training:
+  epochs: 15           # Quick test
+  lr: 0.001
+  weight_decay: 1e-4
+  lambda_class: 1.0
+  lambda_topo: 0.1
+  lambda_aniso: 0.001
+  lambda_size: 0.01
+  aniso_mode: 'barrier' # Enable anisotropy
+  barrier_threshold: 10.0
+
+outputs:
+  base_dir: 'outputs/hypothesis_sparse'
+  log_dir: 'outputs/hypothesis_sparse/logs'
+  image_dir: 'outputs/hypothesis_sparse/images'
+  save_every: 5
+
+meta:
+  experiment_name: 'test_aniso_sparse'
+  description: 'Testing if sparse signal + high noise induces anisotropy'

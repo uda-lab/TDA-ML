@@ -1,0 +1,51 @@
+meta:
+  config_id: "paper_phase2_sine_viz"
+  description: "Phase 2 Sine Curve visualization run."
+
+device: "auto"
+
+outputs:
+  base_dir: "outputs"
+  log_dir: "outputs/viz_phase2_sine/logs"
+  image_dir: "outputs/viz_phase2_sine/images"
+
+data:
+  dataset: "sine_curve"
+  batch_size: 32
+  num_workers: 0 # Single thread for speed
+  
+  # Synthetic Settings
+  train_size: 500 # Reduced 
+  val_size: 100
+  test_size: 100
+  
+  num_points: 200
+  num_outliers: 30
+  
+  seed: 42
+
+training:
+  epochs: 15
+  batch_size: 32
+  lr: 1.0e-3
+  
+  lambda_class: 1.0
+  lambda_topo: 0.1
+  lambda_aniso: 0.0 # Allow ellipses
+  lambda_size: 0.01
+  lambda_min_b: 0.1
+  min_b_target: 0.1
+  
+  visualize_every: 5
+
+loss:
+  aniso_mode: 'linear'
+
+dbscan:
+  eps: 0.1
+  min_samples: 5
+  metric: 'max'
+  search_strategy: 'fixed'
+  target_specificity: 0.99
+  use_tta: True
+  min_b: 0.1
