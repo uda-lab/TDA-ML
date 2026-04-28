@@ -43,6 +43,9 @@ uv run python experiments/run_v73_backend_multiseed.py \
 ### 1) CI最小要件（必須）
 
 - 自動チェック入口コマンドは `uv run ruff check .` を正とする。
+- Pull request および `main` への push では、GitHub Actions（`.github/workflows/ruff.yml`）が `uv sync --all-groups --frozen` の後に同一コマンドを実行する。失敗時は CI が失敗扱いとなる。
+- マージを機械的にブロックするには、リポジトリの Branch protection で当該ワークフローを必須ステータスチェックに含める。
+- ローカル検証は `uv sync`（開発依存を含める場合は `uv sync --all-groups`）の後に `uv run ruff check .` を実行する。解析対象外ディレクトリは `pyproject.toml` の `[tool.ruff]` の `exclude` を参照する。
 - 当該コマンドが失敗した状態（exit code non-zero）では公開不可とする。
 - CI導線の監査結果と例外の扱いは `docs/audit/reproducibility_checklist.md` と `docs/audit/publication_decisions.md` に一本化する。
 

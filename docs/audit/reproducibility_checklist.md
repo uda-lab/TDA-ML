@@ -222,9 +222,9 @@
 
 ## ゲート判定（F-1）
 
-- CI最小要件: `PARTIAL`
-  - 根拠: 正規コマンド `uv run ruff check .` を定義済みだが、`.github/workflows` が存在せず CI実装の自動実行導線は未実装。
-  - 必要対応: CIワークフローで同コマンドを必須化し、失敗時に merge/release をブロックする。
+- CI最小要件: `OK`（ワークフロー実装済み。マージ時の強制ブロックは Branch protection の必須チェック登録が前提）
+  - 根拠: `.github/workflows/ruff.yml` が Pull request および `main` への push で `uv sync --all-groups --frozen` 後に `uv run ruff check .` を実行し、失敗時にジョブが失敗する。
+  - 運用上の残差: リポジトリ設定で当該チェックを必須ステータスに指定しない限り、マージブロックは保証されない（設定側の作業）。
 - 秘密情報: `PARTIAL`
   - 根拠: 取り扱いルールは文書化したが、全履歴を含む機械スキャン結果は未添付。
   - 必要対応: 公開直前に秘密情報スキャン（履歴含む）を実行し、検証ログを残す。
@@ -238,10 +238,30 @@
   - 公開前判定基準（CI/秘密情報/巨大ファイル）が README と監査文書で機械確認可能な形に明文化された。
   - 判定不能事項の送付先を `## 要owner判断` に一本化し、公開判定フローの曖昧さを削減した。
 - 据え置き:
-  - CI の実運用（workflow での強制）は未実装のため `PARTIAL` 据え置き。
   - 秘密情報・巨大ファイルの実地スキャン結果は未添付のため `PARTIAL` 据え置き。
 - 悪化:
   - なし。
+
+## 判定変化（#23 / G-4 F-1 CI 最低ゲート反映）
+
+- 改善:
+  - F-1 の「CI最小要件」: GitHub Actions による `uv run ruff check .` の自動実行が実装され、`PARTIAL` から `OK`（上記 Branch protection 前提の注記付き）へ更新した。
+- 据え置き:
+  - 秘密情報・巨大ファイルゲートは従来どおり `PARTIAL`。
+- 悪化:
+  - なし。
+
+## G-4 F-1 CI 最低ゲート 実装ログ（#23）
+
+- 更新日: 2026-04-28
+- 対象:
+  - `.github/workflows/ruff.yml`
+  - `README.md`
+  - 本書（`docs/audit/reproducibility_checklist.md`）
+- 反映内容:
+  - `astral-sh/setup-uv` と Python 3.12、`uv sync --all-groups --frozen`、`uv run ruff check .` を PR / `main` push で実行するワークフローを追加した。
+  - `pytorch-topological` は `[tool.uv.sources]` の path 依存のため、`actions/checkout` で `submodules: recursive` を指定した。
+  - README と本書に CI 実行内容およびローカル再現コマンド（`uv run ruff check .`）を追記し、F-1 の正規コマンドとの整合を維持した。
 
 ## 検証ログ
 
