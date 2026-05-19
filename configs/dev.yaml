@@ -11,6 +11,7 @@ training:
   lambda_size: 0.0001
 
 model:
+  ellipse_param_dim: 5
   topology_loss:
     metric_type: "anisotropic"
     distance_backend: "mahalanobis"
