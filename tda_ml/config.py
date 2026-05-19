@@ -60,5 +60,4 @@ def model_kwargs_from_config(config: dict[str, Any]) -> dict[str, Any]:
     return {
         "point_dim": int(model_cfg.get("point_dim", 2)),
         "feature_dim": int(model_cfg.get("feature_dim", 128)),
-        "ellipse_param_dim": int(model_cfg.get("ellipse_param_dim", 5)),
     }

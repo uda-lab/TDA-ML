@@ -24,7 +24,6 @@ loss:
   aniso_mode: "barrier"
 
 model:
-  ellipse_param_dim: 5
   threshold: 0.5
   topology_loss:
     distance_backend: "mahalanobis"

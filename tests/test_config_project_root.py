@@ -26,7 +26,8 @@ class TestConfigProjectRoot(unittest.TestCase):
     def test_model_kwargs_from_config(self) -> None:
         cfg = load_config("reproduce")
         kw = model_kwargs_from_config(cfg)
-        self.assertEqual(kw["ellipse_param_dim"], 5)
+        self.assertEqual(kw["point_dim"], 2)
+        self.assertNotIn("ellipse_param_dim", kw)
 
 
 if __name__ == "__main__":

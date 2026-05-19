@@ -22,7 +22,6 @@ model:
     distance_backend: "mahalanobis" # or "ellphi"; multiseed driver overrides per run
     ellphi_differentiable: true
   threshold: 0.1
-  ellipse_param_dim: 5
   point_dim: 2
   feature_dim: 128
 
