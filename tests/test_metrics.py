@@ -2,7 +2,10 @@ import unittest
 
 import numpy as np
 
-from tda_ml.metrics import compute_recall_specificity_gmean_mcc
+from tda_ml.metrics import (
+    compute_recall_specificity_gmean_mcc,
+    compute_recall_specificity_gmean_mcc_wdist,
+)
 
 
 class TestMetrics(unittest.TestCase):
@@ -39,6 +42,33 @@ class TestMetrics(unittest.TestCase):
             compute_recall_specificity_gmean_mcc(np.array([0, 1, np.nan, 0]), y_pred)
         with self.assertRaises(ValueError):
             compute_recall_specificity_gmean_mcc(np.array([0, 1, np.inf, 0]), y_pred)
+
+    def test_compute_metrics_with_wdist_empty_pred_inliers(self):
+        y_true = np.array([0, 0, 1, 1], dtype=int)
+        y_pred = np.array([1, 1, 1, 1], dtype=int)
+        points = np.array([[0.0, 0.0], [0.5, 0.2], [1.0, 1.0], [-1.0, -1.0]])
+        gt_inliers = np.array([[0.0, 0.0], [0.5, 0.2]])
+
+        _, _, _, _, wdist = compute_recall_specificity_gmean_mcc_wdist(
+            y_true, y_pred, points=points, gt_inliers=gt_inliers, empty_pred_wdist=9.99
+        )
+        self.assertAlmostEqual(wdist, 9.99, places=6)
+
+    def test_compute_metrics_wdist_extreme_scale_inputs(self):
+        """極小/極大スケールの点群でも指標計算が有限値で返る。"""
+        y_true = np.array([0, 0, 1, 1], dtype=int)
+        y_pred = np.array([0, 1, 0, 1], dtype=int)
+        points = np.array(
+            [[1e-12, -1e-12], [2e6, -3e6], [1e6, 1e6], [-1e6, 1.5e6]],
+            dtype=np.float64,
+        )
+        gt_inliers = np.array([[1e-12, -1e-12], [2e6, -3e6]], dtype=np.float64)
+
+        recall, specificity, gmean, mcc, wdist = compute_recall_specificity_gmean_mcc_wdist(
+            y_true, y_pred, points=points, gt_inliers=gt_inliers
+        )
+        for value in (recall, specificity, gmean, mcc, wdist):
+            self.assertTrue(np.isfinite(value))
 
 
 if __name__ == "__main__":
