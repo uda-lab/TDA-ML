@@ -105,6 +105,10 @@ The full official command (50 epochs × five seeds × two backends) is **not** e
 - External implementations are reference-only and are not redistributed in this repository.
 - Scripts under `tda_ml/experiments/` are **non-official** and require your own checkpoints (see `configs/README.md`).
 
+### Backend comparison: outlier-probability weighting
+
+For **topological loss**, the batched distance matrix is built per `model.topology_loss.distance_backend`. With **`mahalanobis`**, the implementation can incorporate **predicted outlier probabilities** when forming pairwise distances (see `tda_ml.topology.compute_anisotropic_distance_matrix`). With **`ellphi`**, tangency distances are computed from ellipse geometry only; **probability-based weighting is not implemented** and `probs` are ignored (a warning is emitted once per process; see `tda_ml.distance_backend.compute_distance_matrix_batch`). Hyperparameters in `configs/reproduce.yaml` are shared across backends, but **the induced metric for topological loss is not identical across backends** by design: the intended read is a reproducible pipeline comparison (same data, schedule, and config surface), not a claim that both backends optimize the exact same weighted distance objective. Elliptic contact distances are left as defined by `ellphi`; no synthetic “prob-equivalent” weighting is applied on the ellphi path.
+
 ## License / Attribution
 
 This project is licensed under the MIT License. See `LICENSE`.
