@@ -1,7 +1,7 @@
 # Lightweight local training (non-official; for wiring checks).
 
 meta:
-  config_id: "development"
+  config_id: "dev"
 
 training:
   epochs: 3

@@ -38,7 +38,7 @@ data:
   test_size: 1000
   dataset_type: "mnist"
 
-device: "auto" # "auto", "cpu", or "cuda"
+device: "auto" # "auto", "cpu", "cuda", or "mps"
 
 outputs:
   log_dir: "outputs/logs"
