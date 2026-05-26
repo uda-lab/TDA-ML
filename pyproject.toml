@@ -59,6 +59,7 @@ exclude = [
     ".venv_linux",
     "__pycache__",
     "ellphi_repo",
+    "pytorch-topological",
     "trash",
     "outputs",
     "data",
