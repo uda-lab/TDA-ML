@@ -23,13 +23,9 @@ jobs:
         with:
           submodules: recursive
 
-      # pyproject path dependency; shallow clones without the submodule leave this empty.
+      # pyproject path dependency; pin matches third_party/pytorch_topological.ref.
       - name: Ensure pytorch-topological (uv path dependency)
-        run: |
-          set -euo pipefail
-          if [[ ! -f pytorch-topological/pyproject.toml ]]; then
-            git clone --depth 1 https://github.com/aidos-lab/pytorch-topological.git pytorch-topological
-          fi
+        run: ./scripts/ensure_pytorch_topological.sh
 
       - name: Install uv and Python 3.12
         uses: astral-sh/setup-uv@v5

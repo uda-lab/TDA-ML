@@ -9,12 +9,20 @@ use that path only for files you trust.
 
 from __future__ import annotations
 
+import pickle
 import warnings
 from pathlib import Path
 from typing import Any, cast
 
 import torch
 
+
+
+def _is_weights_only_load_failure(exc: BaseException) -> bool:
+    if isinstance(exc, pickle.UnpicklingError):
+        return True
+    msg = str(exc).lower()
+    return "weights_only" in msg or "weights only" in msg
 
 def load_torch_checkpoint(
     path: str | Path,
@@ -41,8 +49,10 @@ def load_torch_checkpoint(
     except TypeError:
         # PyTorch without ``weights_only`` keyword.
         return torch.load(path, **common_kw)
+    except (FileNotFoundError, PermissionError, OSError):
+        raise
     except Exception as exc:
-        if not weights_only:
+        if not weights_only or not _is_weights_only_load_failure(exc):
             raise
         warnings.warn(
             f"torch.load(weights_only=True) failed ({type(exc).__name__}: {exc!s}); "
@@ -57,12 +67,12 @@ def load_torch_checkpoint(
 
 
 def _looks_like_pytorch_state_dict(obj: Any) -> bool:
-    """Heuristic: string keys and at least one tensor value (typical ``nn.Module`` state)."""
+    """Heuristic: string keys and all tensor values (typical ``nn.Module`` state)."""
     if not isinstance(obj, dict) or not obj:
         return False
     if not all(isinstance(k, str) for k in obj):
         return False
-    return any(isinstance(v, torch.Tensor) for v in obj.values())
+    return all(isinstance(v, torch.Tensor) for v in obj.values())
 
 
 def extract_model_state_dict(checkpoint: Any) -> dict[str, Any]:

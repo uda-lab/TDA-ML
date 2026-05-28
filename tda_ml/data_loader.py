@@ -116,6 +116,14 @@ class NoisyMNISTDataset(Dataset):
 
         num_points = points.shape[0]
 
+        if num_points == 0:
+            fallback_n = min(8, self.max_points)
+            if self.deterministic:
+                points = torch.rand(fallback_n, 2, generator=rng) * 2.0 - 1.0
+            else:
+                points = torch.rand(fallback_n, 2) * 2.0 - 1.0
+            num_points = points.shape[0]
+
         if num_points >= self.max_points:
             if self.deterministic:
                 choice = torch.randperm(num_points, generator=rng)[:self.max_points]

@@ -34,9 +34,13 @@ def ellipse_params_to_centers_cov(
 
 
 def _condensed_gradient_from_full(g: np.ndarray) -> np.ndarray:
+    """Pull square-form upstream gradients back to scipy condensed layout.
+
+    squareform duplicates each d_ij into D_ij and D_ji; sum gradients from both.
+    """
     n = g.shape[0]
     iu = np.triu_indices(n, k=1)
-    return 0.5 * (g[iu] + g[(iu[1], iu[0])])
+    return g[iu] + g[(iu[1], iu[0])]
 
 
 class _EllphiPdistMatrix(torch.autograd.Function):

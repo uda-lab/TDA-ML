@@ -8,6 +8,14 @@ from typing import Any
 import yaml
 
 
+
+def _require_mapping(data: Any, *, path: Path) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"Config YAML must be a mapping at top level: {path} (got {type(data).__name__})"
+        )
+    return data
+
 def default_project_root() -> Path:
     """Directory containing ``configs/`` (repository root when developing from a git checkout)."""
     return Path(__file__).resolve().parent.parent
@@ -29,7 +37,7 @@ def load_config(config_name: str, *, project_root: Path | str | None = None) -> 
 
     base_path = root / "configs" / "base.yaml"
     with base_path.open("r", encoding="utf-8") as f:
-        base_config = yaml.safe_load(f)
+        base_config = _require_mapping(yaml.safe_load(f), path=base_path)
 
     if config_name.endswith(".yaml"):
         env_config_path = Path(config_name)
@@ -39,7 +47,7 @@ def load_config(config_name: str, *, project_root: Path | str | None = None) -> 
         env_config_path = root / "configs" / f"{config_name}.yaml"
 
     with env_config_path.open("r", encoding="utf-8") as f:
-        env_config = yaml.safe_load(f)
+        env_config = _require_mapping(yaml.safe_load(f), path=env_config_path)
 
     return deep_update(base_config, env_config)
 

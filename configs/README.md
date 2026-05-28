@@ -19,7 +19,7 @@ Canonical YAML files live **in this directory** (deep-merged with `base.yaml` by
 | Section | Key | Used by | Notes |
 |---------|-----|---------|--------|
 | `meta` | `config_id` | `main` | Run directory prefix `<config_id>_<timestamp>`. |
-| `model` | `point_dim`, `feature_dim`, `ellipse_param_dim` | `main` | Passed to `AnisotropicOutlierClassifier`. |
+| `model` | `point_dim`, `feature_dim` | `main` | Passed to `AnisotropicOutlierClassifier`. |
 | `model` | `threshold` | `Trainer` | Classification threshold. |
 | `model` | `topology_loss.distance_backend` | `Trainer` | `mahalanobis` or `ellphi` (set by multiseed driver per run). |
 | `model` | `topology_loss.ellphi_differentiable` | `Trainer` | Default `true`; multiseed driver reads from merged config. |
