@@ -101,6 +101,9 @@ The full official command (50 epochs × five seeds × two backends) is **not** e
 - Runtime and numeric behavior can vary by `device`, `thread`, and `dtype`; effective values should be logged per run.
 - External implementations are reference-only and are not redistributed in this repository.
 - Scripts under `tda_ml/experiments/` are **non-official** and require your own checkpoints (see `configs/README.md`).
+- `run_backend_multiseed.py` multiseed backend comparison is **not** a pure distance-backend-only ablation; it compares full training pipelines, not an isolated backend switch.
+- For topological loss, **`mahalanobis`** can incorporate predicted **outlier-probability weighting** in the distance matrix; **`ellphi`** does not (geometry-only distances; `probs` ignored).
+- Read outcomes as **two full pipelines** under the same schedule and config surface, not as isolating distance-backend effects alone.
 
 ### Backend comparison: outlier-probability weighting
 

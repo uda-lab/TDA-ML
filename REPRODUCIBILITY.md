@@ -13,13 +13,11 @@
 - **依存関係**: **uv** で管理。リポジトリのルートで:
 
   ```bash
-  git submodule update --init --recursive
-  test -f pytorch-topological/pyproject.toml || \
-    git clone --depth 1 https://github.com/aidos-lab/pytorch-topological.git pytorch-topological
+  ./scripts/ensure_pytorch_topological.sh
   uv sync --all-groups   # ローカル検証用に dev（pytest, ruff）を含める
   ```
 
-  `torch_topological` は **`pytorch-topological/` の path 依存**であり、このリポジトリの既定クローンには含まれない。上記 `git clone` は CI と同じ不足時の取得手順である。
+  `torch_topological` は **`pytorch-topological/` の path 依存**（`pyproject.toml`）であり、通常の `git clone` だけではディレクトリが揃いません。コミットは **`third_party/pytorch_topological.ref`** に固定し、**`scripts/ensure_pytorch_topological.sh`** がその ref に checkout します（CI と同じ）。サブモジュール gitlink がある場合は `git submodule update --init --recursive` のあとも ensure で pin を検証してください。詳細は `third_party/README.md`。
 
 - **PyTorch / CUDA**: 数値結果はデバイスや dtype によって変わり得ます。`tda_ml/main.py` の学習ループを使う場合、有効な設定は各実行の `logs/` 配下の `runtime_profile.json` などに記録されます。
 
@@ -51,6 +49,10 @@ uv run python experiments/run_backend_multiseed.py \
 再開の挙動、ロックファイル、CSV の意味は `README.md` に書いてあります。
 
 ### バックエンド比較と outlier 確率の重み（非対称）
+
+- `run_backend_multiseed.py` のマルチシード・バックエンド比較は、**距離バックエンドだけを切り替えた純粋な ablation ではありません**（学習パイプライン全体の比較です）。
+- 位相損失では **`mahalanobis`** が outlier **確率による重み付け**を距離行列に織り込める一方、**`ellphi`** では **未実装**で `probs` は使われません。
+- 結果は **同一スケジュール・同一設定表面**（典型: `configs/reproduce.yaml`）上の **2 本のフルパイプライン**として読み、距離実装だけの効果に還元しないでください。
 
 位相損失用の距離行列は `model.topology_loss.distance_backend` ごとに別定義です。**`mahalanobis`** では、学習で予測した **outlier 確率 `probs`** を距離の重み付けに織り込めます（`tda_ml.topology.compute_anisotropic_distance_matrix`）。**`ellphi`** では楕円の接触距離のみを用い、**確率に基づく重み付けは未実装のため `probs` は使われません**（初回のみ `UserWarning` が出ます。実装は `tda_ml.distance_backend.compute_distance_matrix_batch`）。
 
