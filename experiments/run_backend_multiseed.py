@@ -70,7 +70,13 @@ PROGRESS_HEADER = [
 REQUIRED_METRIC_COLUMNS = {"val_mcc", "val_recall", "val_loss"}
 
 
-def _parse_finite_float(row: dict[str, str], key: str, metrics_path: str) -> float:
+def _parse_float(
+    row: dict[str, str],
+    key: str,
+    metrics_path: str,
+    *,
+    require_finite: bool = True,
+) -> float:
     if key not in row:
         raise RuntimeError(f"Missing column '{key}' in metrics file: {metrics_path}")
     try:
@@ -79,8 +85,13 @@ def _parse_finite_float(row: dict[str, str], key: str, metrics_path: str) -> flo
         raise RuntimeError(
             f"Failed to parse '{key}' as float in metrics file: {metrics_path}"
         ) from e
-    if not math.isfinite(value):
+    if require_finite and not math.isfinite(value):
         raise RuntimeError(f"Non-finite value for '{key}' in metrics file: {metrics_path}")
+    if not require_finite and not math.isfinite(value):
+        print(
+            f"[WARN] Non-finite value for '{key}' in metrics file: {metrics_path}; "
+            "keeping value for summary output."
+        )
     return value
 
 
@@ -100,14 +111,16 @@ def parse_metrics_csv(metrics_path: str) -> dict[str, float]:
 
     final = rows[-1]
     # Tie-break: first epoch row attaining max val_mcc (stable with max()).
-    best = max(rows, key=lambda r: _parse_finite_float(r, "val_mcc", metrics_path))
+    best = max(rows, key=lambda r: _parse_float(r, "val_mcc", metrics_path))
     return {
-        "final_val_mcc": _parse_finite_float(final, "val_mcc", metrics_path),
-        "final_val_recall": _parse_finite_float(final, "val_recall", metrics_path),
-        "final_val_loss": _parse_finite_float(final, "val_loss", metrics_path),
-        "best_val_mcc": _parse_finite_float(best, "val_mcc", metrics_path),
-        "best_val_recall": _parse_finite_float(best, "val_recall", metrics_path),
-        "best_val_loss": _parse_finite_float(best, "val_loss", metrics_path),
+        "final_val_mcc": _parse_float(final, "val_mcc", metrics_path),
+        "final_val_recall": _parse_float(final, "val_recall", metrics_path),
+        "final_val_loss": _parse_float(
+            final, "val_loss", metrics_path, require_finite=False
+        ),
+        "best_val_mcc": _parse_float(best, "val_mcc", metrics_path),
+        "best_val_recall": _parse_float(best, "val_recall", metrics_path),
+        "best_val_loss": _parse_float(best, "val_loss", metrics_path, require_finite=False),
     }
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import math
 import sys
 import tempfile
 import unittest
@@ -52,6 +53,25 @@ class TestRunBackendMultiseed(unittest.TestCase):
             m = rbm.parse_metrics_csv(path)
             self.assertAlmostEqual(m["best_val_recall"], 0.1)
             self.assertAlmostEqual(m["best_val_loss"], 2.0)
+        finally:
+            Path(path).unlink(missing_ok=True)
+
+    def test_parse_metrics_csv_allows_non_finite_val_loss(self) -> None:
+        rows = [
+            {"val_mcc": "0.1", "val_recall": "0.2", "val_loss": "1.0"},
+            {"val_mcc": "0.2", "val_recall": "0.3", "val_loss": "nan"},
+        ]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+            writer = csv.DictWriter(f, fieldnames=["val_mcc", "val_recall", "val_loss"])
+            writer.writeheader()
+            writer.writerows(rows)
+            path = f.name
+        try:
+            m = rbm.parse_metrics_csv(path)
+            self.assertAlmostEqual(m["best_val_mcc"], 0.2)
+            self.assertAlmostEqual(m["best_val_recall"], 0.3)
+            self.assertTrue(math.isnan(m["best_val_loss"]))
+            self.assertTrue(math.isnan(m["final_val_loss"]))
         finally:
             Path(path).unlink(missing_ok=True)
 
