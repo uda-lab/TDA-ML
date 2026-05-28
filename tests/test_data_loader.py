@@ -1,6 +1,6 @@
 import torch
 import unittest
-from tda_ml.data_loader import get_dataset, PreloadedOutlierMNIST, MockOutlierDataset
+from tda_ml.data_loader import get_dataset, PreloadedOutlierMNIST, MockOutlierDataset, NoisyMNISTDataset
 
 class TestDataLoader(unittest.TestCase):
     def setUp(self):
@@ -65,6 +65,24 @@ class TestDataLoader(unittest.TestCase):
         # Check that clean_pc contains only the inlier points (padded)
         self.assertEqual(torch.sum(torch.abs(clean_pc).sum(dim=-1) > 1e-6), max_points - num_outliers)
 
+
+
+    def test_empty_foreground_does_not_crash(self):
+        """Padding with zero foreground points must not call randint(0, 0)."""
+        dataset = NoisyMNISTDataset(
+            train=False,
+            num_samples=1,
+            max_points=20,
+            num_outliers=5,
+            preload=False,
+            deterministic=True,
+            noise_seed=42,
+        )
+        dataset.images = torch.zeros((1, 28, 28), dtype=torch.uint8)
+        data, labels, clean_pc = dataset[0]
+        self.assertEqual(data.shape, (25, 2))
+        self.assertEqual(labels.shape, (25,))
+        self.assertEqual(clean_pc.shape, (20, 2))
 
     def test_mnist_outlier_dataset_loading(self):
         """Test if PreloadedOutlierMNIST initializes and returns correct data."""
