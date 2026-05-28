@@ -17,6 +17,10 @@ class DecoupledGeometricEncoder(nn.Module):
     3. Feature Learning: Process canonical coordinates through MLPs to learn structural corrections.
     """
     def __init__(self, in_dim=2, local_dim=64, k=5):
+        if in_dim != 2:
+            raise ValueError(
+                f"DecoupledGeometricEncoder only supports 2D point clouds (in_dim=2), got in_dim={in_dim}"
+            )
         super().__init__()
         self.k = k
         self.local_dim = local_dim
@@ -97,10 +101,19 @@ class AnisotropicOutlierClassifier(nn.Module):
     2. Ellipse Axes: $a_i = a_{i, base} \cdot \exp(\Delta a_i)$, $b_i = b_{i, base} \cdot \exp(\Delta b_i)$
     3. Ellipse Angle: $\theta_i = \theta_{i, base} + \tanh(\Delta \theta_i) \cdot \frac{\pi}{2}$
 
-    ``forward`` returns ellipse parameters with shape ``(B, N, 3)`` as ``[a, b, theta]`` per point.
+    ``ellipse_param_dim`` must be ``3`` (``[a, b, theta]`` per point). Five-dimensional
+    ellipse outputs are not implemented in this PR.
+
+    ``forward`` returns ellipse parameters with shape ``(B, N, ellipse_param_dim)``.
     """
-    def __init__(self, point_dim=2, feature_dim=128):
+    def __init__(self, point_dim=2, feature_dim=128, ellipse_param_dim: int = 3):
         super().__init__()
+        if ellipse_param_dim != 3:
+            raise ValueError(
+                "AnisotropicOutlierClassifier supports ellipse_param_dim=3 ([a, b, theta]) only; "
+                f"got ellipse_param_dim={ellipse_param_dim}. Five-dimensional outputs are not implemented."
+            )
+        self.ellipse_param_dim = ellipse_param_dim
 
         self.encoder = DecoupledGeometricEncoder(in_dim=point_dim, local_dim=64, k=10)
         
@@ -115,7 +128,7 @@ class AnisotropicOutlierClassifier(nn.Module):
         self.topology_head = nn.Sequential(
             nn.Linear(head_in_dim, 64),
             nn.ReLU(),
-            nn.Linear(64, 3),
+            nn.Linear(64, ellipse_param_dim),
         )
         nn.init.constant_(self.topology_head[-1].bias[0], -1.0)
         nn.init.constant_(self.topology_head[-1].bias[1], -1.0)
