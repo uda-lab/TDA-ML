@@ -220,6 +220,11 @@ class Trainer:
                     size_loss.item(),
                 )
 
+        if steps_completed == 0 or not all_train_labels:
+            raise RuntimeError(
+                f"All training batches were skipped at epoch={epoch}; loss was NaN for every batch."
+            )
+
         denom = steps_completed if steps_completed > 0 else 1
         avg_loss = total_loss / denom
         avg_class_loss = total_class_loss / denom
