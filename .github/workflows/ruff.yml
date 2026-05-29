@@ -1,5 +1,5 @@
-# F-1 / BLG-004: run static analysis on every PR and on pushes to protected branches.
-# PR1 scope: ruff only. pytest and repro-smoke are added when tda_ml/ and tests/ land (later PRs).
+# F-1 / BLG-004: static analysis, tests, and a lightweight repro smoke on every PR and on pushes
+# to protected branches. (Workflow filename kept as ruff.yml for existing branch-protection hooks.)
 # Add this workflow as a required status check in branch protection to block merges on failure.
 name: Ruff
 
@@ -38,3 +38,18 @@ jobs:
 
       - name: Ruff check (repo root; F-1 canonical command)
         run: uv run ruff check .
+
+      - name: Pytest
+        run: uv run pytest -q
+
+      # One epoch, one seed, mahalanobis only (README / REPRODUCIBILITY.md). Fresh out-base per run.
+      - name: Repro smoke (run_backend_multiseed)
+        run: |
+          set -euo pipefail
+          OUT="outputs/ci_smoke_${GITHUB_RUN_ID:-local}"
+          uv run python experiments/run_backend_multiseed.py \
+            --base-config reproduce \
+            --epochs 1 \
+            --seeds 42 \
+            --backends mahalanobis \
+            --out-base "$OUT"
