@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+from tda_ml.numerical_eps import EIGENVALUE_FLOOR, PCA_RIDGE_EPS
+
 class DecoupledGeometricEncoder(nn.Module):
     r"""
     Decoupled encoder: local neighborhood PCA / eigendecomposition plus separate MLP heads.
@@ -66,17 +68,21 @@ class DecoupledGeometricEncoder(nn.Module):
         centered = relative_coords - mean_neighbor
         
         cov = torch.matmul(centered.transpose(-1, -2), centered) / (self.k - 1)
-        
-        e, v = torch.linalg.eigh(cov + torch.eye(2, device=x.device) * 1e-6)
+
+        # eigh is not implemented for float16; local PCA in float32 is standard.
+        cov32 = cov.float()
+        eye2 = torch.eye(2, device=x.device, dtype=torch.float32)
+        e, v = torch.linalg.eigh(cov32 + eye2 * PCA_RIDGE_EPS)
         
         v1 = v[:, :, :, 1]
         base_angle = torch.atan2(v1[:, :, 1], v1[:, :, 0]).unsqueeze(-1)
         
-        base_axes = torch.sqrt(torch.clamp(e, min=1e-6))
+        base_axes = torch.sqrt(torch.clamp(e, min=EIGENVALUE_FLOOR))
         base_axes = torch.flip(base_axes, dims=[-1])
         
-        base_axes = base_axes / (base_axes.max(dim=-1, keepdim=True)[0] + 1e-6)
-        base_axes = torch.clamp(base_axes, min=0.2)
+        base_axes = base_axes / (
+            base_axes.max(dim=-1, keepdim=True)[0] + EIGENVALUE_FLOOR
+        )
         
         local_coords_canonical = torch.matmul(centered, v)
         
