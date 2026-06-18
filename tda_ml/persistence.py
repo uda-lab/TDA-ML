@@ -27,25 +27,22 @@ def wasserstein_h1(
 
 def compute_w_distance(points_pred, points_gt):
     """
-    Computes Wasserstein distance between persistence diagrams (dim 1) of two point clouds.
+    Wasserstein distance between H1 persistence diagrams of two point clouds.
 
     Args:
         points_pred: (N, 2) array or tensor
         points_gt: (M, 2) array or tensor
 
     Returns:
-        distance: float. Returns ``999.0`` when ``points_pred`` is empty (no diagram to match),
-        and ``0.0`` when ``points_gt`` is empty.
+        1-Wasserstein distance (``order=1``, ``internal_p=2``) via Gudhi.
+        Empty point clouds yield empty H1 diagrams; the distance is the
+        standard optimal-transport cost (including matching to the diagonal),
+        not a sentinel penalty.
     """
     if isinstance(points_pred, torch.Tensor):
         points_pred = points_pred.detach().cpu().numpy()
     if isinstance(points_gt, torch.Tensor):
         points_gt = points_gt.detach().cpu().numpy()
-
-    if len(points_pred) == 0:
-        return 999.0
-    if len(points_gt) == 0:
-        return 0.0
 
     def get_pd(pts):
         if len(pts) < 3:
@@ -58,33 +55,24 @@ def compute_w_distance(points_pred, points_gt):
 
     pd_pred = get_pd(points_pred)
     pd_gt = get_pd(points_gt)
-
-    if len(pd_pred) == 0 and len(pd_gt) == 0:
-        return 0.0
-    if len(pd_pred) == 0:
-        pd_pred = np.empty((0, 2))
-    if len(pd_gt) == 0:
-        pd_gt = np.empty((0, 2))
 
     return wasserstein_h1(pd_pred, pd_gt, order=1, internal_p=2)
 
 
 def compute_bottleneck_distance(points_pred, points_gt):
     """
-    Computes Bottleneck distance between persistence diagrams (dim 1).
+    Bottleneck distance between H1 persistence diagrams of two point clouds.
 
     Hold note (B-3 / GitHub #24): currently unused in active tda_ml/scripts/tests,
     but referenced in legacy code under `trash/`; keep until removal is fully validated.
+
+    Empty point clouds yield empty H1 diagrams; distance is computed via Gudhi
+    without sentinel penalties (same policy as :func:`compute_w_distance`).
     """
     if isinstance(points_pred, torch.Tensor):
         points_pred = points_pred.detach().cpu().numpy()
     if isinstance(points_gt, torch.Tensor):
         points_gt = points_gt.detach().cpu().numpy()
-
-    if len(points_pred) == 0:
-        return 99.0
-    if len(points_gt) == 0:
-        return 0.0
 
     def get_pd(pts):
         if len(pts) < 3:
@@ -98,15 +86,12 @@ def compute_bottleneck_distance(points_pred, points_gt):
     pd_pred = get_pd(points_pred)
     pd_gt = get_pd(points_gt)
 
-    if len(pd_pred) == 0 and len(pd_gt) == 0:
-        return 0.0
     if len(pd_pred) == 0:
         pd_pred = np.empty((0, 2))
     if len(pd_gt) == 0:
         pd_gt = np.empty((0, 2))
 
-    dist = gudhi.bottleneck_distance(pd_pred, pd_gt)
-    return dist
+    return float(gudhi.bottleneck_distance(pd_pred, pd_gt))
 
 
 def compute_betti_error(points_pred, points_gt):
