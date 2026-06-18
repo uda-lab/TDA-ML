@@ -146,7 +146,7 @@ class AnisotropicOutlierClassifier(nn.Module):
         raw = self.topology_head(topo_feats)
 
         axes_scale = torch.exp(raw[:, :, 0:2])
-        axes = axes_scale * base_axes + 1e-4
+        axes = axes_scale * base_axes
         angle_delta = torch.tanh(raw[:, :, 2:3]) * (torch.pi / 2)
         angle = base_angle + angle_delta
         ellipse_params = torch.cat([axes, angle], dim=2)

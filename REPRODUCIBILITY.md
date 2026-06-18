@@ -4,7 +4,7 @@
 
 ## リポジトリに含まれる範囲（目安）
 
-- **含む:** `tda_ml/`、**`configs/` 直下の正本 YAML**（`base.yaml` と `reproduce` / `dev` / `prod` / `test_fast` の各ファイル）、`tests/`、追跡されている `scripts/`、`experiments/run_backend_multiseed.py`、および `README.md` / `REPRODUCIBILITY.md` / `pyproject.toml` / `uv.lock` / `LICENSE` / `CITATION.cff` などのメタデータ。
+- **含む:** `tda_ml/`、**`configs/` 直下の正本 YAML**（`base.yaml` と `reproduce` / `dev` / `prod` / `test_fast` の各ファイル）、`tests/`、追跡されている `scripts/`、`experiments/run_backend_multiseed.py`、`experiments/issue59_verify_mahalanobis.py`、および `README.md` / `REPRODUCIBILITY.md` / `pyproject.toml` / `uv.lock` / `LICENSE` / `CITATION.cff` などのメタデータ。
 - **含めない:** `docs/` 以下、`configs/archive/`（履歴用 YAML を置く場合は **ローカルのみ**）、`outputs/`、`data/` など。`load_config("archive/...")` は、手元に `configs/archive/*.yaml` を置いた場合にのみ使えます。
 
 ## 環境
@@ -105,7 +105,7 @@ uv run python experiments/issue59_verify_mahalanobis.py
 ```
 
 - 設定: `configs/issue59_verify_mahalanobis.yaml`（`reproduce_1week_tuned` 相当・**mahalanobis**）
-- **3 epoch 後**も `val_mcc` / `train_mcc` が閾値（既定 0.05 / 0.02）を超えない、または全 outlier 予測（`val_recall≈1`）なら **学習を打ち切り**
+- **`probe_epochs` 後**（`configs/issue59_verify_mahalanobis.yaml` では既定 8）も `val_mcc` / `train_mcc` が閾値（0.05 / 0.02）を超えない、または全 outlier 予測（`val_recall≈1`）なら **学習を打ち切り**
 - 打ち切り時の成果物（`<run_dir>/logs/`）:
   - `issue59_abort_report.json` / `.md` — 楕円軸・encoder PCA・距離行列・分類の統計と**原因仮説リスト**
   - `abort_checkpoint.pth` — 打ち切り時点の重み
