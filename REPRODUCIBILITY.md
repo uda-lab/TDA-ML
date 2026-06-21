@@ -4,7 +4,7 @@
 
 ## リポジトリに含まれる範囲（目安）
 
-- **含む:** `tda_ml/`、**`configs/` 直下の正本 YAML**（`base.yaml` と `reproduce` / `dev` / `prod` / `test_fast` の各ファイル）、`tests/`、追跡されている `scripts/`、`experiments/run_backend_multiseed.py`、および `README.md` / `REPRODUCIBILITY.md` / `pyproject.toml` / `uv.lock` / `LICENSE` / `CITATION.cff` などのメタデータ。
+- **含む:** `tda_ml/`、**`configs/` 直下の正本 YAML**（`base.yaml` と `reproduce` / `dev` / `prod` / `test_fast` の各ファイル）、`tests/`、追跡されている `scripts/`、`experiments/run_backend_multiseed.py`、`experiments/issue59_verify_mahalanobis.py`、および `README.md` / `REPRODUCIBILITY.md` / `pyproject.toml` / `uv.lock` / `LICENSE` / `CITATION.cff` などのメタデータ。
 - **含めない:** `docs/` 以下、`configs/archive/`（履歴用 YAML を置く場合は **ローカルのみ**）、`outputs/`、`data/` など。`load_config("archive/...")` は、手元に `configs/archive/*.yaml` を置いた場合にのみ使えます。
 
 ## 環境
@@ -57,6 +57,61 @@ uv run python experiments/run_backend_multiseed.py \
 位相損失用の距離行列は `model.topology_loss.distance_backend` ごとに別定義です。**`mahalanobis`** では、学習で予測した **outlier 確率 `probs`** を距離の重み付けに織り込めます（`tda_ml.topology.compute_anisotropic_distance_matrix`）。**`ellphi`** では楕円の接触距離のみを用い、**確率に基づく重み付けは未実装のため `probs` は使われません**（初回のみ `UserWarning` が出ます。実装は `tda_ml.distance_backend.compute_distance_matrix_batch`）。
 
 したがって、`run_backend_multiseed.py` で同じ YAML を回しても、**位相損失が見ている距離空間はバックエンド間で同一ではありません**。ここでは「同一のデータ・スケジュール・設定表面での再現パイプライン比較」を意図しており、**両バックエンドが数学的に完全に同型の重み付き距離目的関数を共有する**という読み方はしません。`ellphi` 側に Mahalanobis の確率重みに相当する項を無理に足す予定はなく、比較の解釈は本節および `README.md` の英語節（*Backend comparison: outlier-probability weighting*）に従ってください。
+
+## 教師あり学習の目的関数（論文 Methods 用）
+
+本線 `tda_ml/` の学習は **点ラベル BCE** と **clean 点群の $H_1$ 持久図との Wasserstein 教師** を併用します（`configs/reproduce.yaml` 系）。
+
+\[
+\mathcal{L}
+= w_{\mathrm{class}}\mathcal{L}_{\mathrm{BCE}}
++ w_{\mathrm{topo}}\, W_2^2\!\bigl(\mathrm{PD}_{H_1}(D^{\theta,p}),\,\mathrm{PD}_{H_1}(X_{\mathrm{clean}})\bigr)
++ w_{\mathrm{size}}\mathcal{L}_{\mathrm{size}}
++ w_{\mathrm{aniso}}\mathcal{L}_{\mathrm{aniso}}.
+\]
+
+**楕円パラメータ（`axis_param=legacy`、主表の既定）** — 局所 PCA の $a_{i,\mathrm{base}}, b_{i,\mathrm{base}}, \theta_{i,\mathrm{base}}$ に対し:
+
+\[
+a_i = a_{i,\mathrm{base}}\, e^{\Delta a_i},\quad
+b_i = b_{i,\mathrm{base}}\, e^{\Delta b_i},\quad
+\theta_i = \theta_{i,\mathrm{base}} + \tanh(\Delta\theta_i)\frac{\pi}{2}.
+\]
+
+**正則化（`tda_ml/losses.py`）**
+
+\[
+\mathcal{L}_{\mathrm{size}} = \frac{1}{N}\sum_i (M_i^2 + m_i^2),\quad
+M_i=\max(a_i,b_i),\; m_i=\min(a_i,b_i).
+\]
+
+主表 config では `aniso_mode: linear` により
+$\mathcal{L}_{\mathrm{aniso}} = \frac{1}{N}\sum_i R_i$（$R_i=M_i/m_i$）。
+図用 ablation（`ablation_localscale_try2` 等）では
+`aniso_mode: barrier` として
+$\mathcal{L}_{\mathrm{aniso}} = \frac{10}{N}\sum_i \mathrm{ReLU}(R_i-\tau)^2$。
+
+**Mahalanobis 距離**（`tda_ml/topology.py`）は outlier 確率 $p_i$ により二乗距離を
+$1/\bigl((1-p_i)(1-p_j)\bigr)$ で重み付け（`INLIER_PROB_MIN` で下限クリップ）。
+
+**数値安定化のみの定数**（モデリング床ではない）は `tda_ml/numerical_eps.py` に集約し、付録で列挙します。encoder の `clamp(0.2)` や legacy の `+10^{-4}` といった**論文に無い床は削除済み**（issue #59）。
+
+### issue #59 検証（早期打ち切り + 診断）
+
+床削除後の教師あり本線を確認するには:
+
+```bash
+uv run python experiments/issue59_verify_mahalanobis.py
+```
+
+- 設定: `configs/issue59_verify_mahalanobis.yaml`（`reproduce_1week_tuned` 相当・**mahalanobis**）
+- **`probe_epochs` 後**（`configs/issue59_verify_mahalanobis.yaml` では既定 8）も `val_mcc` / `train_mcc` が閾値（0.05 / 0.02）を超えない、または全 outlier 予測（`val_recall≈1`）なら **学習を打ち切り**
+- 打ち切り時の成果物（`<run_dir>/logs/`）:
+  - `issue59_abort_report.json` / `.md` — 楕円軸・encoder PCA・距離行列・分類の統計と**原因仮説リスト**
+  - `abort_checkpoint.pth` — 打ち切り時点の重み
+  - `run_manifest.json` — コミット SHA・early_abort 設定
+
+CLI: `--epochs 12 --seed 42 --out-base outputs/issue59_verify`
 
 ## 図・定性出力
 

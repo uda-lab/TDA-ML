@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from torch_topological.nn import VietorisRipsComplex, WassersteinDistance
 
 from tda_ml.distance_backend import compute_distance_matrix_batch
+from tda_ml.numerical_eps import NUMERICAL_EPS
 from tda_ml.topology import compute_anisotropic_distance_matrix
 
 # Distance-mode aliases for topology loss (kept for config/test compatibility).
@@ -109,7 +110,7 @@ class AnisotropyPenaltyLoss(nn.Module):
         major_axis = axes.max(dim=-1)[0]
         minor_axis = axes.min(dim=-1)[0]
         
-        aspect_ratios = major_axis / (minor_axis + 1e-6)
+        aspect_ratios = major_axis / (minor_axis + NUMERICAL_EPS)
         
         if self.mode == 'barrier':
             barrier_term = F.relu(aspect_ratios - self.barrier_threshold).pow(2).mean()
@@ -193,6 +194,8 @@ class TopologicalLoss(nn.Module):
             )
 
         if valid_samples == 0:
-            return torch.tensor(0.0, device=points.device, requires_grad=True)
+            raise RuntimeError(
+                "TopologicalLoss: all batch items failed; no valid Wasserstein terms"
+            )
 
         return self.weight * (total_loss / valid_samples)

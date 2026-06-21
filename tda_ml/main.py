@@ -12,6 +12,12 @@ from tda_ml.data_loader import NoisyMNISTDataset, create_data_loader
 from tda_ml.models import AnisotropicOutlierClassifier
 from tda_ml.seed_utils import set_global_seed
 from tda_ml.runtime_profile import build_runtime_profile
+from tda_ml.supervised_diagnostics import (
+    git_revision,
+    run_abort_diagnostics,
+    should_early_abort,
+    write_abort_report,
+)
 from tda_ml.trainer import Trainer
 
 logger = logging.getLogger(__name__)
@@ -198,6 +204,26 @@ def main(config_name=None, config=None, trial=None, config_overrides=None):
     with open(runtime_profile_path, "w", encoding="utf-8") as f:
         json.dump(runtime_profile, f, ensure_ascii=True, indent=2)
     logger.info("Runtime profile saved: %s", runtime_profile_path)
+
+    manifest = {
+        "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "source_revision": git_revision(),
+        "config_id": config_id,
+        "command_entry": "tda_ml.main",
+        "seed": seed,
+        "epochs_planned": config["training"]["epochs"],
+        "distance_backend": config.get("model", {})
+        .get("topology_loss", {})
+        .get("distance_backend", "mahalanobis"),
+        "early_abort": config.get("training", {}).get("early_abort"),
+        "run_dir": run_dir,
+        "fallback_status": "not applicable",
+    }
+    manifest_path = os.path.join(log_dir, "run_manifest.json")
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=True, indent=2)
+    logger.info("Run manifest saved: %s", manifest_path)
+
     with open(metrics_path, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['epoch', 'train_loss', 'train_class_loss', 'train_topo_loss', 'train_aniso_loss', 'train_size_loss', 'val_loss', 'val_recall', 'val_mcc', 'val_aniso', 'val_size'])
@@ -205,16 +231,36 @@ def main(config_name=None, config=None, trial=None, config_overrides=None):
     # --- Training Loop ---
     epochs = config['training']['epochs']
     save_every = config['outputs'].get('save_every', 10)
-    best_val_mcc = -1.0 
-    
+    best_val_mcc = -1.0
+    early_abort_cfg = config.get("training", {}).get("early_abort", {})
+    metrics_history: list[dict] = []
+    final_status = "completed"
+    abort_report_path = None
+
     for epoch in range(1, epochs + 1):
         # res returns (avg_loss, class_loss, topo_loss, aniso_loss, size_loss, ...)
-        res = trainer.train_epoch(data_loader, epoch) 
+        res = trainer.train_epoch(data_loader, epoch)
         val_res = trainer.validate(val_loader)
-        
+
         val_mcc = val_res[4] # MCC is at index 4
-        print(f"Epoch {epoch}: Val MCC={val_mcc:.4f}, Aniso={val_res[5]:.4f}") 
-        
+        train_mcc = res[10]
+        val_recall = val_res[1]
+        print(f"Epoch {epoch}: Val MCC={val_mcc:.4f}, Aniso={val_res[5]:.4f}")
+
+        metrics_history.append(
+            {
+                "epoch": epoch,
+                "val_mcc": float(val_mcc),
+                "train_mcc": float(train_mcc),
+                "val_recall": float(val_recall),
+                "val_specificity": float(val_res[2]),
+                "val_loss": float(val_res[0]),
+                "train_loss": float(res[0]),
+                "val_size": float(val_res[6]),
+                "val_aniso": float(val_res[5]),
+            }
+        )
+
         # Save best model logic
         if val_mcc > best_val_mcc:
             best_val_mcc = val_mcc
@@ -238,7 +284,63 @@ def main(config_name=None, config=None, trial=None, config_overrides=None):
         with open(metrics_path, 'a', newline='') as f:
             writer = csv.writer(f)
             writer.writerow([epoch, res[0], res[1], res[2], res[3], res[4], val_res[0], val_res[1], val_res[4], val_res[5], val_res[6]])
-            
+
+        do_abort, abort_reason = should_early_abort(
+            epoch=epoch,
+            best_val_mcc=best_val_mcc,
+            val_recall=val_recall,
+            val_mcc=val_mcc,
+            train_mcc=train_mcc,
+            early_abort_cfg=early_abort_cfg,
+        )
+        if do_abort:
+            abort_ckpt = os.path.join(run_dir, "abort_checkpoint.pth")
+            torch.save(
+                {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "val_mcc": val_mcc,
+                    "best_val_mcc": best_val_mcc,
+                    "abort_reason": abort_reason,
+                },
+                abort_ckpt,
+            )
+            logger.warning("Early abort at epoch %s: %s", epoch, abort_reason)
+            report = run_abort_diagnostics(
+                trainer=trainer,
+                model=model,
+                val_loader=val_loader,
+                device=device,
+                epoch=epoch,
+                metrics_history=metrics_history,
+                abort_reason=abort_reason,
+            )
+            abort_report_path = write_abort_report(log_dir, report)
+            logger.warning("Abort diagnostics: %s", abort_report_path)
+            manifest["final_status"] = "early-aborted"
+            manifest["abort_epoch"] = epoch
+            manifest["abort_reason"] = abort_reason
+            manifest["abort_report"] = str(abort_report_path)
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, ensure_ascii=True, indent=2)
+            final_status = "early-aborted"
+            break
+
+    if final_status == "completed":
+        manifest["final_status"] = "completed"
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, ensure_ascii=True, indent=2)
+
+    if final_status == "early-aborted":
+        return {
+            "val_gmean": val_res[3],
+            "val_mcc": val_res[4],
+            "run_dir": run_dir,
+            "status": final_status,
+            "best_val_mcc": best_val_mcc,
+            "abort_report": str(abort_report_path) if abort_report_path else None,
+        }
+
     final_model_path = os.path.join(run_dir, 'final_model.pth')
     torch.save(model.state_dict(), final_model_path)
     print(f"Saved final model to {final_model_path}")
@@ -279,6 +381,9 @@ def main(config_name=None, config=None, trial=None, config_overrides=None):
         "val_gmean": val_res[3],
         "val_mcc": val_res[4],
         "run_dir": run_dir,
+        "status": final_status,
+        "best_val_mcc": best_val_mcc,
+        "abort_report": None,
     }
 
 if __name__ == "__main__":
