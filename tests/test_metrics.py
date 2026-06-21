@@ -6,6 +6,7 @@ from tda_ml.metrics import (
     compute_recall_specificity_gmean_mcc,
     compute_recall_specificity_gmean_mcc_wdist,
 )
+from tda_ml.persistence import compute_w_distance
 
 
 class TestMetrics(unittest.TestCase):
@@ -47,12 +48,19 @@ class TestMetrics(unittest.TestCase):
         y_true = np.array([0, 0, 1, 1], dtype=int)
         y_pred = np.array([1, 1, 1, 1], dtype=int)
         points = np.array([[0.0, 0.0], [0.5, 0.2], [1.0, 1.0], [-1.0, -1.0]])
-        gt_inliers = np.array([[0.0, 0.0], [0.5, 0.2]])
+        gt_inliers = self._circle_gt_inliers()
 
         _, _, _, _, wdist = compute_recall_specificity_gmean_mcc_wdist(
-            y_true, y_pred, points=points, gt_inliers=gt_inliers, empty_pred_wdist=9.99
+            y_true, y_pred, points=points, gt_inliers=gt_inliers
         )
-        self.assertAlmostEqual(wdist, 9.99, places=6)
+        expected = compute_w_distance(np.empty((0, 2)), gt_inliers)
+        self.assertAlmostEqual(wdist, expected, places=6)
+        self.assertTrue(np.isfinite(wdist))
+
+    @staticmethod
+    def _circle_gt_inliers(n: int = 12) -> np.ndarray:
+        theta = np.linspace(0, 2 * np.pi, n, endpoint=False)
+        return np.stack([np.cos(theta), np.sin(theta)], axis=1)
 
     def test_compute_metrics_wdist_extreme_scale_inputs(self):
         """極小/極大スケールの点群でも指標計算が有限値で返る。"""
