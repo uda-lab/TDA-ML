@@ -124,6 +124,21 @@ def compute_anisotropic_distance_matrix(
             f"symmetrize must be 'max' or 'min', got {symmetrize!r}"
         )
 
-    # sqrt'(0) is undefined; diagonal entries are exactly zero, so add NUMERICAL_EPS
-    # inside sqrt for a bounded derivative (declared L2 floor, not a modeling prior).
-    return torch.sqrt(dist_sq + NUMERICAL_EPS)
+    return _sqrt_off_diagonal_only(dist_sq)
+
+
+def _sqrt_off_diagonal_only(dist_sq: torch.Tensor) -> torch.Tensor:
+    """
+    Mahalanobis distances with zero diagonal without sqrt backward on self-distances.
+
+    Diagonal squared distances are identically zero (self-distance). Differentiating
+    ``sqrt(x)`` at ``x=0`` yields NaN gradients. VR / persistence uses off-diagonal
+    entries only, so diagonals stay zero and ``sqrt`` is applied only where
+    ``dist_sq > 0`` (never to zero squared distances, including self-distance and
+    coincident off-diagonal pairs).
+    """
+    dist_sq = torch.clamp(dist_sq, min=0.0)
+    dist = torch.zeros_like(dist_sq)
+    positive = dist_sq > 0
+    dist[positive] = torch.sqrt(dist_sq[positive])
+    return dist

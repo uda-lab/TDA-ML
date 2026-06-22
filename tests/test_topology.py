@@ -1,9 +1,7 @@
-import math
 import unittest
 
 import torch
 
-from tda_ml.numerical_eps import NUMERICAL_EPS
 from tda_ml.topology import compute_anisotropic_distance_matrix
 
 
@@ -19,13 +17,12 @@ class TestTopology(unittest.TestCase):
         )
         return points, params
 
-    def test_diagonal_uses_numerical_sqrt_floor(self):
+    def test_diagonal_is_exactly_zero(self):
         points, params = self._make_batch()
         dist = compute_anisotropic_distance_matrix(points, params, symmetrize="max")
-        expected = math.sqrt(NUMERICAL_EPS)
         n = points.shape[1]
         for i in range(n):
-            self.assertAlmostEqual(dist[0, i, i].item(), expected, places=8)
+            self.assertEqual(dist[0, i, i].item(), 0.0)
 
     def test_symmetry_max_and_min(self):
         points, params = self._make_batch()
@@ -53,8 +50,7 @@ class TestTopology(unittest.TestCase):
                 atol=1e-8,
             )
         )
-        expected_diag = math.sqrt(NUMERICAL_EPS)
-        self.assertAlmostEqual(dist_probs[0, 0, 0].item(), expected_diag, places=8)
+        self.assertEqual(dist_probs[0, 0, 0].item(), 0.0)
 
     def test_invalid_symmetrize_raises(self):
         points, params = self._make_batch()
