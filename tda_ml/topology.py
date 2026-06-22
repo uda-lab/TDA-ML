@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import torch
 
+from tda_ml.numerical_eps import INLIER_PROB_MIN, NUMERICAL_EPS
+
 
 def compute_anisotropic_metric(
     axes: torch.Tensor,
@@ -20,15 +22,15 @@ def compute_anisotropic_metric(
     Returns:
         tuple: (m00, m11, m01) components of the metric tensors.
     """
-    a = axes[..., 0] + 1e-6
-    b = axes[..., 1] + 1e-6
+    a = axes[..., 0]
+    b = axes[..., 1]
     theta = angles.squeeze(-1)
 
     cos_t = torch.cos(theta)
     sin_t = torch.sin(theta)
 
-    inv_a2 = 1.0 / (a**2 + 1e-8)
-    inv_b2 = 1.0 / (b**2 + 1e-8)
+    inv_a2 = 1.0 / (a**2 + NUMERICAL_EPS)
+    inv_b2 = 1.0 / (b**2 + NUMERICAL_EPS)
 
     # Components of M = R diag(a^-2, b^-2) R^T
     m00 = cos_t**2 * inv_a2 + sin_t**2 * inv_b2
@@ -106,9 +108,9 @@ def compute_anisotropic_distance_matrix(
     # Weight by inlier probabilities if provided: divide squared distance by p_in[i]*p_in[j].
     if probs is not None:
         inlier_probs = 1.0 - probs
-        inlier_probs = torch.clamp(inlier_probs, min=1e-4)
+        inlier_probs = torch.clamp(inlier_probs, min=INLIER_PROB_MIN)
         prob_matrix = inlier_probs.unsqueeze(2) * inlier_probs.unsqueeze(1)  # (B, N, N)
-        dist_sq_ij = dist_sq_ij / (prob_matrix + 1e-8)
+        dist_sq_ij = dist_sq_ij / (prob_matrix + NUMERICAL_EPS)
 
     # Symmetrization
     dist_sq_ji = dist_sq_ij.transpose(-1, -2)
