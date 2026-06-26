@@ -267,13 +267,14 @@ def run_one(
     epochs: int,
     out_base: str,
     progress_csv: str,
+    w_topo: float | None = None,
 ) -> None:
     cfg = load_config(base_config_name, project_root=REPO_ROOT)
     config_id = f"backend_{backend}_seed{seed}"
     topo_cfg = cfg.get("model", {}).get("topology_loss", {})
     ellphi_diff = bool(topo_cfg.get("ellphi_differentiable", True))
 
-    overrides = {
+    overrides: dict[str, Any] = {
         "meta": {"config_id": config_id},
         "training": {"epochs": epochs},
         "data": {"seed": seed},
@@ -285,6 +286,8 @@ def run_one(
         },
         "outputs": {"base_dir": out_base},
     }
+    if w_topo is not None:
+        overrides["loss"] = {"w_topo": float(w_topo)}
     cfg = deep_update(cfg, overrides)
 
     before = set(glob.glob(os.path.join(out_base, f"{config_id}_*")))
@@ -346,6 +349,12 @@ def parse_args() -> argparse.Namespace:
             "progress_summary.csv."
         ),
     )
+    p.add_argument(
+        "--w-topo",
+        type=float,
+        default=None,
+        help="Override loss.w_topo (e.g. 0 for topology ablation).",
+    )
     return p.parse_args()
 
 
@@ -387,6 +396,7 @@ def main() -> None:
                     epochs=args.epochs,
                     out_base=args.out_base,
                     progress_csv=progress_csv,
+                    w_topo=args.w_topo,
                 )
                 write_backend_stats(progress_csv, stats_csv)
 
