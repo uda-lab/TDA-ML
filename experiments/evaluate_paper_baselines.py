@@ -1,0 +1,514 @@
+#!/usr/bin/env python3
+"""
+Paper-aligned baseline evaluation (Phase 3).
+
+Same data split as ``evaluate_paper_protocol.py`` (``configs/reproduce.yaml``,
+seeds 42, 123, 456, 789, 1024): tune hyperparameters on validation clouds,
+report MCC / G-Mean / W-Dist on test via ``compute_recall_specificity_gmean_mcc_wdist``.
+
+Methods:
+  1. Euclidean DBSCAN (sklearn on raw coordinates)
+  2. Isolation Forest
+  3. Local Outlier Factor (LOF)
+  4. ADBSCAN (local PCA ellipses + Mahalanobis ``apply_anisotropic_dbscan``)
+
+Usage::
+
+    uv run python experiments/evaluate_paper_baselines.py \\
+        --out-dir outputs/paper_baselines
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+from collections.abc import Callable, Sequence
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import torch
+from sklearn.cluster import DBSCAN
+from sklearn.ensemble import IsolationForest
+from sklearn.neighbors import LocalOutlierFactor
+from tqdm import tqdm
+
+from experiments.evaluate_paper_protocol import (
+    CloudMetrics,
+    _aggregate_cloud_metrics,
+    _valid_clean_inliers,
+    build_split_loader,
+    dbscan_labels_to_outlier_pred,
+    evaluate_cloud_dbscan,
+)
+from tda_ml.config import deep_update, load_config
+from tda_ml.metrics import compute_recall_specificity_gmean_mcc_wdist
+from tda_ml.numerical_eps import EIGENVALUE_FLOOR, PCA_RIDGE_EPS
+from tda_ml.supervised_diagnostics import git_revision
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+PAPER_SEEDS = [42, 123, 456, 789, 1024]
+LOCAL_PCA_K = 10
+
+DEFAULT_EPS_VALUES = list(np.linspace(0.15, 1.5, 15))
+DEFAULT_MIN_SAMPLES_VALUES = [3, 5, 7, 10, 15]
+DEFAULT_CONTAMINATION_VALUES = [0.05, 0.07, 0.09, 0.11, 0.13, 0.15, 0.20]
+DEFAULT_LOF_N_NEIGHBORS = [5, 10, 15, 20, 30]
+
+
+@dataclass
+class CloudSample:
+    points: np.ndarray
+    labels_gt: np.ndarray
+    clean_pc: np.ndarray
+    adbscan_params: np.ndarray | None = None
+
+
+@dataclass
+class SeedResult:
+    seed: int
+    method: str
+    hparams: dict[str, Any]
+    val_mcc: float
+    test_recall: float
+    test_specificity: float
+    test_gmean: float
+    test_mcc: float
+    test_wdist: float
+    n_test_clouds: int
+
+
+def local_pca_ellipse_params(points: np.ndarray, k: int = LOCAL_PCA_K) -> np.ndarray:
+    """
+    Baseline ellipse parameters from local PCA only (no learned deltas).
+
+    Matches ``DecoupledGeometricEncoder`` + zero MLP corrections:
+    ``[a, b, theta]`` per point, shape ``(N, 3)``.
+    """
+    if points.ndim != 2 or points.shape[1] != 2:
+        raise ValueError(f"points must be (N, 2); got {points.shape}")
+    n = points.shape[0]
+    if n < k:
+        raise ValueError(f"Need at least k={k} points; got n={n}")
+
+    x = torch.from_numpy(points.astype(np.float32)).unsqueeze(0)  # 1, N, 2
+    dist_sq = torch.cdist(x, x, p=2) ** 2
+    _, idx = torch.topk(-dist_sq, k=k, dim=-1)
+
+    batch_idx = torch.arange(1).view(1, 1, 1).expand(1, n, k)
+    flat_x = x.view(n, 2)
+    flat_neighbors = flat_x[idx.view(1, -1) + (batch_idx.view(1, -1) * n), :]
+    neighbors = flat_neighbors.view(1, n, k, 2)
+
+    relative_coords = neighbors - x.unsqueeze(2)
+    mean_neighbor = relative_coords.mean(dim=2, keepdim=True)
+    centered = relative_coords - mean_neighbor
+    cov = torch.matmul(centered.transpose(-1, -2), centered) / (k - 1)
+
+    eye2 = torch.eye(2, dtype=torch.float32)
+    e, v = torch.linalg.eigh(cov.float() + eye2 * PCA_RIDGE_EPS)
+    v1 = v[:, :, :, 1]
+    base_angle = torch.atan2(v1[:, :, 1], v1[:, :, 0])
+
+    base_axes = torch.sqrt(torch.clamp(e, min=EIGENVALUE_FLOOR))
+    base_axes = torch.flip(base_axes, dims=[-1])
+    base_axes = base_axes / (base_axes.max(dim=-1, keepdim=True)[0] + EIGENVALUE_FLOOR)
+
+    params = torch.cat([base_axes, base_angle.unsqueeze(-1)], dim=-1)
+    return params.squeeze(0).numpy()
+
+
+def load_clouds(config: dict[str, Any], split: str, device: torch.device) -> list[CloudSample]:
+    loader = build_split_loader(config, split, device)
+    clouds: list[CloudSample] = []
+    for data, labels, clean_pc in loader:
+        data_np = data.numpy()
+        labels_np = labels.numpy()
+        clean_np = clean_pc.numpy()
+        for b in range(data_np.shape[0]):
+            points = data_np[b]
+            params = local_pca_ellipse_params(points)
+            clouds.append(
+                CloudSample(
+                    points=points,
+                    labels_gt=labels_np[b],
+                    clean_pc=clean_np[b],
+                    adbscan_params=params,
+                )
+            )
+    return clouds
+
+
+def cloud_metrics_from_pred(
+    labels_gt: np.ndarray,
+    pred: np.ndarray,
+    points: np.ndarray,
+    clean_pc: np.ndarray,
+) -> CloudMetrics:
+    gt_inliers = _valid_clean_inliers(clean_pc)
+    recall, specificity, gmean, mcc, wdist = compute_recall_specificity_gmean_mcc_wdist(
+        labels_gt,
+        pred,
+        points=points,
+        gt_inliers=gt_inliers,
+    )
+    return CloudMetrics(recall, specificity, gmean, mcc, wdist)
+
+
+def evaluate_euclidean_dbscan(
+    cloud: CloudSample,
+    *,
+    eps: float,
+    min_samples: int,
+) -> CloudMetrics:
+    db_labels = DBSCAN(eps=eps, min_samples=min_samples).fit_predict(cloud.points)
+    pred = dbscan_labels_to_outlier_pred(db_labels)
+    return cloud_metrics_from_pred(cloud.labels_gt, pred, cloud.points, cloud.clean_pc)
+
+
+def evaluate_isolation_forest(
+    cloud: CloudSample,
+    *,
+    contamination: float,
+    random_state: int,
+) -> CloudMetrics:
+    iso = IsolationForest(contamination=contamination, random_state=random_state)
+    sk_pred = iso.fit_predict(cloud.points)
+    pred = (sk_pred == -1).astype(np.int64)
+    return cloud_metrics_from_pred(cloud.labels_gt, pred, cloud.points, cloud.clean_pc)
+
+
+def evaluate_lof(
+    cloud: CloudSample,
+    *,
+    n_neighbors: int,
+    contamination: float,
+) -> CloudMetrics:
+    lof = LocalOutlierFactor(
+        n_neighbors=n_neighbors,
+        contamination=contamination,
+        novelty=False,
+    )
+    sk_pred = lof.fit_predict(cloud.points)
+    pred = (sk_pred == -1).astype(np.int64)
+    return cloud_metrics_from_pred(cloud.labels_gt, pred, cloud.points, cloud.clean_pc)
+
+
+def evaluate_adbscan(
+    cloud: CloudSample,
+    *,
+    eps: float,
+    min_samples: int,
+) -> CloudMetrics:
+    if cloud.adbscan_params is None:
+        raise ValueError("adbscan_params missing")
+    return evaluate_cloud_dbscan(
+        cloud.points,
+        cloud.adbscan_params,
+        cloud.labels_gt,
+        cloud.clean_pc,
+        eps=eps,
+        min_samples=min_samples,
+        backend="mahalanobis",
+    )
+
+
+def grid_search_clouds(
+    clouds: Sequence[CloudSample],
+    evaluate_fn: Callable[..., CloudMetrics],
+    param_combos: Sequence[dict[str, Any]],
+    *,
+    desc: str,
+) -> tuple[dict[str, Any], float, list[dict[str, Any]]]:
+    best_mcc = -1.0
+    best_params = dict(param_combos[0])
+    grid_log: list[dict[str, Any]] = []
+
+    for params in tqdm(param_combos, desc=desc, leave=False):
+        per_cloud: list[CloudMetrics] = []
+        error: str | None = None
+        for cloud in clouds:
+            try:
+                per_cloud.append(evaluate_fn(cloud, **params))
+            except Exception as exc:  # noqa: BLE001 — skip invalid hparam combos
+                error = str(exc)
+                per_cloud = []
+                break
+        if error is not None:
+            grid_log.append({**params, "error": error})
+            continue
+        _, _, _, mcc, _ = _aggregate_cloud_metrics(per_cloud)
+        grid_log.append({**params, "mean_mcc": mcc, "n_clouds": len(per_cloud)})
+        if mcc > best_mcc:
+            best_mcc = mcc
+            best_params = dict(params)
+
+    if best_mcc < 0:
+        raise RuntimeError(f"Grid search failed for all hparams ({desc}); log={grid_log[:5]}")
+    return best_params, best_mcc, grid_log
+
+
+def dbscan_param_combos(
+    eps_values: Sequence[float],
+    min_samples_values: Sequence[int],
+) -> list[dict[str, Any]]:
+    return [
+        {"eps": float(eps), "min_samples": int(ms)}
+        for eps in eps_values
+        for ms in min_samples_values
+    ]
+
+
+def contamination_param_combos(contamination_values: Sequence[float]) -> list[dict[str, Any]]:
+    return [{"contamination": float(c)} for c in contamination_values]
+
+
+def lof_param_combos(
+    n_neighbors_values: Sequence[int],
+    contamination_values: Sequence[float],
+) -> list[dict[str, Any]]:
+    return [
+        {"n_neighbors": int(n), "contamination": float(c)}
+        for n in n_neighbors_values
+        for c in contamination_values
+    ]
+
+
+def evaluate_method_on_seed(
+    method: str,
+    config: dict[str, Any],
+    seed: int,
+    device: torch.device,
+    *,
+    eps_values: Sequence[float],
+    min_samples_values: Sequence[int],
+    contamination_values: Sequence[float],
+    lof_n_neighbors_values: Sequence[int],
+) -> tuple[SeedResult, list[dict[str, Any]]]:
+    val_clouds = load_clouds(config, "val", device)
+    test_clouds = load_clouds(config, "test", device)
+
+    if method == "euclidean_dbscan":
+        combos = dbscan_param_combos(eps_values, min_samples_values)
+        best_params, val_mcc, grid_log = grid_search_clouds(
+            val_clouds,
+            evaluate_euclidean_dbscan,
+            combos,
+            desc=f"seed{seed} euclidean_dbscan val",
+        )
+        test_fn: Callable[..., CloudMetrics] = evaluate_euclidean_dbscan
+    elif method == "isolation_forest":
+        combos = [
+            {"contamination": float(c), "random_state": seed}
+            for c in contamination_values
+        ]
+        best_params, val_mcc, grid_log = grid_search_clouds(
+            val_clouds,
+            evaluate_isolation_forest,
+            combos,
+            desc=f"seed{seed} isolation_forest val",
+        )
+        test_fn = evaluate_isolation_forest
+    elif method == "lof":
+        combos = lof_param_combos(lof_n_neighbors_values, contamination_values)
+        best_params, val_mcc, grid_log = grid_search_clouds(
+            val_clouds,
+            evaluate_lof,
+            combos,
+            desc=f"seed{seed} lof val",
+        )
+        test_fn = evaluate_lof
+    elif method == "adbscan":
+        combos = dbscan_param_combos(eps_values, min_samples_values)
+        best_params, val_mcc, grid_log = grid_search_clouds(
+            val_clouds,
+            evaluate_adbscan,
+            combos,
+            desc=f"seed{seed} adbscan val",
+        )
+        test_fn = evaluate_adbscan
+    else:
+        raise ValueError(f"Unknown method: {method!r}")
+
+    per_test: list[CloudMetrics] = []
+    for cloud in test_clouds:
+        per_test.append(test_fn(cloud, **best_params))
+    recall, specificity, gmean, mcc, wdist = _aggregate_cloud_metrics(per_test)
+
+    return SeedResult(
+        seed=seed,
+        method=method,
+        hparams=best_params,
+        val_mcc=val_mcc,
+        test_recall=recall,
+        test_specificity=specificity,
+        test_gmean=gmean,
+        test_mcc=mcc,
+        test_wdist=wdist,
+        n_test_clouds=len(per_test),
+    ), grid_log
+
+
+def config_for_seed(base_config: str, seed: int) -> dict[str, Any]:
+    cfg = load_config(base_config, project_root=REPO_ROOT)
+    return deep_update(cfg, {"data": {"seed": int(seed)}})
+
+
+def sample_std(values: Sequence[float]) -> float:
+    arr = np.asarray(values, dtype=np.float64)
+    if arr.size < 2:
+        return 0.0
+    return float(np.std(arr, ddof=1))
+
+
+def write_summary_csv(
+    out_path: Path,
+    rows: list[dict[str, Any]],
+) -> None:
+    fieldnames = [
+        "method",
+        "mcc_mean",
+        "mcc_std",
+        "gmean_mean",
+        "gmean_std",
+        "wdist_mean",
+        "wdist_std",
+        "notes",
+    ]
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({k: row.get(k, "") for k in fieldnames})
+
+
+def aggregate_method_results(seed_results: Sequence[SeedResult]) -> dict[str, Any]:
+    mccs = [r.test_mcc for r in seed_results]
+    gmeans = [r.test_gmean for r in seed_results]
+    wdist = [r.test_wdist for r in seed_results]
+    method = seed_results[0].method
+    return {
+        "method": method,
+        "mcc_mean": float(np.mean(mccs)),
+        "mcc_std": sample_std(mccs),
+        "gmean_mean": float(np.mean(gmeans)),
+        "gmean_std": sample_std(gmeans),
+        "wdist_mean": float(np.mean(wdist)),
+        "wdist_std": sample_std(wdist),
+        "notes": (
+            f"5 seeds; val hparam selection by max mean cloud MCC; "
+            f"test n_clouds={seed_results[0].n_test_clouds} per seed"
+        ),
+    }
+
+
+METHOD_ORDER = [
+    "euclidean_dbscan",
+    "isolation_forest",
+    "lof",
+    "adbscan",
+]
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--base-config", type=str, default="reproduce")
+    p.add_argument("--out-dir", type=Path, default=REPO_ROOT / "outputs" / "paper_baselines")
+    p.add_argument("--seeds", type=int, nargs="+", default=PAPER_SEEDS)
+    p.add_argument(
+        "--methods",
+        nargs="+",
+        choices=METHOD_ORDER,
+        default=METHOD_ORDER,
+    )
+    p.add_argument("--eps-values", type=float, nargs="+", default=DEFAULT_EPS_VALUES)
+    p.add_argument("--min-samples-values", type=int, nargs="+", default=DEFAULT_MIN_SAMPLES_VALUES)
+    p.add_argument("--contamination-values", type=float, nargs="+", default=DEFAULT_CONTAMINATION_VALUES)
+    p.add_argument("--lof-n-neighbors", type=int, nargs="+", default=DEFAULT_LOF_N_NEIGHBORS)
+    return p.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    out_dir = args.out_dir.resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    manifest = {
+        "source_revision": git_revision(REPO_ROOT),
+        "base_config": args.base_config,
+        "seeds": list(args.seeds),
+        "methods": list(args.methods),
+        "selection": "max mean cloud MCC on validation split",
+        "metrics": "compute_recall_specificity_gmean_mcc_wdist",
+        "local_pca_k": LOCAL_PCA_K,
+        "grids": {
+            "eps_values": list(args.eps_values),
+            "min_samples_values": list(args.min_samples_values),
+            "contamination_values": list(args.contamination_values),
+            "lof_n_neighbors": list(args.lof_n_neighbors),
+        },
+    }
+
+    all_seed_results: dict[str, list[SeedResult]] = {m: [] for m in args.methods}
+
+    for seed in args.seeds:
+        config = config_for_seed(args.base_config, seed)
+        seed_dir = out_dir / f"seed{seed}"
+        seed_dir.mkdir(parents=True, exist_ok=True)
+
+        for method in args.methods:
+            print(f"\n=== seed={seed} method={method} ===")
+            result, grid_log = evaluate_method_on_seed(
+                method,
+                config,
+                seed,
+                device,
+                eps_values=args.eps_values,
+                min_samples_values=args.min_samples_values,
+                contamination_values=args.contamination_values,
+                lof_n_neighbors_values=args.lof_n_neighbors,
+            )
+            all_seed_results[method].append(result)
+
+            payload = {
+                **asdict(result),
+                "grid_log": grid_log,
+            }
+            out_json = seed_dir / f"{method}.json"
+            out_json.write_text(json.dumps(payload, indent=2) + "\n")
+            print(
+                f"  val_mcc={result.val_mcc:.4f}  test_mcc={result.test_mcc:.4f}  "
+                f"test_gmean={result.test_gmean:.4f}  test_wdist={result.test_wdist:.4f}  "
+                f"hparams={result.hparams}"
+            )
+
+    summary_rows = [
+        aggregate_method_results(all_seed_results[m])
+        for m in args.methods
+        if all_seed_results[m]
+    ]
+    summary_path = out_dir / "summary_baselines.csv"
+    write_summary_csv(summary_path, summary_rows)
+
+    manifest["summary_csv"] = str(summary_path)
+    manifest["per_seed_json"] = str(out_dir / "seed{seed}/{method}.json")
+    manifest_path = out_dir / "MANIFEST_baselines.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+
+    print(f"\nWrote {summary_path}")
+    print(f"Wrote {manifest_path}")
+    for row in summary_rows:
+        print(
+            f"  {row['method']}: MCC={row['mcc_mean']:.4f}±{row['mcc_std']:.4f}  "
+            f"G-Mean={row['gmean_mean']:.4f}±{row['gmean_std']:.4f}  "
+            f"W-Dist={row['wdist_mean']:.4f}±{row['wdist_std']:.4f}"
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
